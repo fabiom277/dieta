@@ -33,14 +33,51 @@ function calculateTargetCalories(tdee, goal) {
 
 // --- OPTION C: Ricerca per similarità + Spuntini ---
 
+// Mappa di sinonimi/categorie per filtrare in modo intelligente
+const FOOD_CATEGORY_MAP = {
+    'pesce':       ['salmone', 'orata', 'branzino', 'tonno', 'merluzzo', 'acciughe', 'alici', 'sgombro', 'dentice', 'spigola', 'trota', 'baccalà'],
+    'crostacei':   ['gamberetti', 'gamberi', 'scampi', 'aragosta', 'astice', 'granchio'],
+    'molluschi':   ['vongole', 'cozze', 'calamari', 'seppie', 'polpo', 'moscardini'],
+    'frutti di mare': ['gamberetti', 'gamberi', 'vongole', 'cozze', 'seppie', 'scampi'],
+    'carne':       ['manzo', 'maiale', 'pollo', 'tacchino', 'agnello', 'vitello', 'hamburger', 'salsiccia', 'pancetta'],
+    'lattosio':    ['latte', 'burro', 'panna', 'ricotta', 'mozzarella', 'formaggio', 'parmigiano', 'yogurt', 'kefir'],
+    'glutine':     ['pasta', 'pane', 'farina', 'semola', 'orzo', 'farro', 'cous cous', 'piadina', 'gnocchi'],
+    'uova':        ['uova', 'uovo'],
+    'frutta secca':['mandorle', 'noci', 'nocciole', 'pistacchi', 'arachidi', 'anacardi'],
+};
+
 function getSafeRecipes(dislikesStr, pool) {
-    const dislikes = dislikesStr.toLowerCase().split(',').map(d => d.trim()).filter(d => d.length > 0);
+    if (!dislikesStr || dislikesStr.trim() === '') return pool;
+
+    const rawDislikes = dislikesStr.toLowerCase().split(',').map(d => d.trim()).filter(d => d.length > 0);
+
+    // Espandi i sinonimi: se l'utente scrive "pesce" aggiunge anche salmone, orata, ecc.
+    const expandedDislikes = new Set(rawDislikes);
+    rawDislikes.forEach(d => {
+        if (FOOD_CATEGORY_MAP[d]) {
+            FOOD_CATEGORY_MAP[d].forEach(synonym => expandedDislikes.add(synonym));
+        }
+    });
+    const dislikes = Array.from(expandedDislikes);
+
     return pool.filter(recipe => {
-        const hasDislikedIngredient = recipe.ingredients.some(ing => {
-            return dislikes.some(dislike => ing.name.toLowerCase().includes(dislike));
-        });
-        const hasDislikedTag = recipe.tags ? recipe.tags.some(tag => dislikes.includes(tag.toLowerCase())) : false;
-        return !hasDislikedIngredient && !hasDislikedTag;
+        // 1. Controlla se il NOME della ricetta contiene una parola da escludere
+        const nameContainsDislike = dislikes.some(d => recipe.name.toLowerCase().includes(d));
+        if (nameContainsDislike) return false;
+
+        // 2. Controlla se un INGREDIENTE contiene una parola da escludere
+        const hasDislikedIngredient = recipe.ingredients.some(ing =>
+            dislikes.some(d => ing.name.toLowerCase().includes(d))
+        );
+        if (hasDislikedIngredient) return false;
+
+        // 3. Controlla i TAG della ricetta
+        const hasDislikedTag = recipe.tags
+            ? recipe.tags.some(tag => dislikes.includes(tag.toLowerCase()) || rawDislikes.includes(tag.toLowerCase()))
+            : false;
+        if (hasDislikedTag) return false;
+
+        return true;
     });
 }
 

@@ -19,17 +19,16 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (sharedPlan) {
         try {
-            // Decodifica il piano base64
             const decoded = JSON.parse(atob(sharedPlan));
             appState.user = decoded.user;
             appState.plan = hydratePlanFromIds(decoded.planIds);
             localStorage.setItem('nutriplan_state', JSON.stringify(appState));
-            // Pulisci l'URL per estetica
             window.history.replaceState({}, document.title, window.location.pathname);
+            setupEventListeners(); // FIX: must be called before showView
             showView('dashboard');
             return;
         } catch (e) {
-            console.error("Link di condivisione non valido", e);
+            console.error('Link di condivisione non valido', e);
         }
     }
 
@@ -54,6 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function setupEventListeners() {
     navDashboard.addEventListener('click', () => showView('dashboard'));
     navShopping.addEventListener('click', () => showView('shopping'));
+    document.getElementById('nav-profile').addEventListener('click', () => showView('profile'));
     document.getElementById('onboarding-form').addEventListener('submit', handleOnboardingSubmit);
     
     // Modals
@@ -67,18 +67,37 @@ function setupEventListeners() {
     
     // Spesa
     document.getElementById('generate-shopping').addEventListener('click', generateShoppingList);
+
+    // Profilo
+    document.getElementById('btn-regenerate').addEventListener('click', () => {
+        if (confirm('Vuoi rigenerare il piano settimanale? Il piano attuale verrà sostituito.')) {
+            appState.plan = generateMonthlyPlan(appState.user.targetCalories, appState.user.dislikes);
+            appState.plan.forEach(day => {
+                if (day.meals.breakfast) day.meals.breakfast.excluded = false;
+                if (day.meals.snack) day.meals.snack.excluded = false;
+                if (day.meals.lunch) day.meals.lunch.excluded = false;
+            });
+            localStorage.setItem('nutriplan_state', JSON.stringify(appState));
+            showView('dashboard');
+        }
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+        if (confirm('Sei sicuro? Verranno cancellati tutti i tuoi dati e il piano attuale.')) {
+            localStorage.removeItem('nutriplan_state');
+            appState = { user: null, plan: [] };
+            mainNav.classList.add('hidden');
+            showView('onboarding');
+        }
+    });
 }
 
 function showView(viewName) {
-    viewOnboarding.classList.remove('active');
-    viewDashboard.classList.remove('active');
-    viewShopping.classList.remove('active');
-    viewOnboarding.classList.add('hidden');
-    viewDashboard.classList.add('hidden');
-    viewShopping.classList.add('hidden');
+    const allViews = [viewOnboarding, viewDashboard, viewShopping, document.getElementById('view-profile')];
+    allViews.forEach(v => { if (v) { v.classList.remove('active'); v.classList.add('hidden'); } });
 
-    navDashboard.classList.remove('active');
-    navShopping.classList.remove('active');
+    const allNavBtns = [navDashboard, navShopping, document.getElementById('nav-profile')];
+    allNavBtns.forEach(b => { if (b) b.classList.remove('active'); });
 
     if (viewName === 'onboarding') {
         viewOnboarding.classList.remove('hidden');
@@ -95,13 +114,63 @@ function showView(viewName) {
         viewShopping.classList.add('active');
         navShopping.classList.add('active');
         mainNav.classList.remove('hidden');
+    } else if (viewName === 'profile') {
+        const profileView = document.getElementById('view-profile');
+        profileView.classList.remove('hidden');
+        profileView.classList.add('active');
+        document.getElementById('nav-profile').classList.add('active');
+        mainNav.classList.remove('hidden');
+        renderProfile();
     }
+}
+
+function renderProfile() {
+    if (!appState.user) return;
+    const u = appState.user;
+    const activityLabels = { '1.2': 'Sedentario', '1.375': 'Leggero', '1.55': 'Moderato', '1.725': 'Attivo' };
+    const goalLabels = { 'lose': 'Perdita di peso', 'maintain': 'Mantenimento', 'gain': 'Aumento massa' };
+    const bmiData = calculateBMI(u.weight, u.height);
+
+    document.getElementById('profile-data').innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+            <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">ETÀ</div>
+                <div style="font-size: 1.2rem; font-weight: 700;">${u.age} anni</div>
+            </div>
+            <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">CORPO</div>
+                <div style="font-size: 1.2rem; font-weight: 700;">${u.weight} kg · ${u.height} cm</div>
+            </div>
+            <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">BMI</div>
+                <div style="font-size: 1.2rem; font-weight: 700; color: var(--accent-primary);">${bmiData.bmi} <span style="font-size: 0.85rem; color: var(--text-muted);">(${bmiData.category})</span></div>
+            </div>
+            <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">TARGET CALORICO</div>
+                <div style="font-size: 1.2rem; font-weight: 700; color: var(--accent-primary);">${u.targetCalories} kcal/giorno</div>
+            </div>
+            <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">ATTIVITÀ</div>
+                <div style="font-size: 1rem; font-weight: 600;">${activityLabels[u.activity] || u.activity}</div>
+            </div>
+            <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">OBIETTIVO</div>
+                <div style="font-size: 1rem; font-weight: 600;">${goalLabels[u.goal] || u.goal}</div>
+            </div>
+        </div>
+        ${u.dislikes && u.dislikes.trim() ? `
+        <div style="background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 12px; padding: 1rem;">
+            <div style="font-size: 0.75rem; color: #f87171; margin-bottom: 0.5rem; font-weight: 600;">🚫 CIBI ESCLUSI</div>
+            <div style="color: var(--text-secondary);">${u.dislikes}</div>
+        </div>` : ''}
+    `;
 }
 
 function handleOnboardingSubmit(e) {
     e.preventDefault();
     
     const age = parseInt(document.getElementById('age').value);
+
     const gender = document.getElementById('gender').value;
     const weight = parseFloat(document.getElementById('weight').value);
     const height = parseInt(document.getElementById('height').value);
