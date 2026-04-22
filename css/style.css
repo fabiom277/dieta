@@ -454,3 +454,29 @@ input:focus, select:focus {
     opacity: 0.4;
     filter: grayscale(100%);
 }
+
+/* Auth Tabs */
+.auth-tab {
+    flex: 1;
+    padding: 0.75rem;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    font-family: inherit;
+}
+
+.auth-tab.active {
+    background: var(--accent-primary);
+    color: #fff;
+    font-weight: 600;
+}
+
+.auth-tab:not(.active):hover {
+    background: rgba(255,255,255,0.05);
+    color: var(--text-primary);
+}
+

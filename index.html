@@ -7,6 +7,7 @@
     <meta name="description" content="Il tuo nutrizionista personale per piani alimentari su misura e liste della spesa.">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
     <header>
@@ -18,12 +19,39 @@
             <button id="nav-dashboard" class="active">Piano Settimanale</button>
             <button id="nav-shopping">Lista della Spesa</button>
             <button id="nav-profile">Il Mio Profilo</button>
+            <button id="btn-logout" style="background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #f87171; padding: 0.4rem 0.9rem; border-radius: 8px; font-size: 0.85rem; cursor: pointer;">Esci</button>
         </nav>
     </header>
 
     <main>
+        <!-- Auth View (Login / Registrazione) -->
+        <section id="view-auth" class="view hidden">
+            <div class="glass-panel text-center" style="max-width: 440px; margin: 3rem auto;">
+                <div style="display: flex; gap: 0; margin-bottom: 2rem; border-radius: 10px; overflow: hidden; border: 1px solid var(--glass-border);">
+                    <button id="tab-login" class="auth-tab active" onclick="switchAuthTab('login')">Accedi</button>
+                    <button id="tab-register" class="auth-tab" onclick="switchAuthTab('register')">Registrati</button>
+                </div>
+
+                <div id="auth-error" style="display:none; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #f87171; padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.9rem;"></div>
+
+                <form id="auth-form" style="display: flex; flex-direction: column; gap: 1rem; text-align: left;">
+                    <div class="form-group">
+                        <label for="auth-email">Email</label>
+                        <input type="email" id="auth-email" required placeholder="la-tua@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="auth-password">Password</label>
+                        <input type="password" id="auth-password" required placeholder="minimo 6 caratteri">
+                    </div>
+                    <button type="submit" id="auth-submit" class="btn btn-primary" style="margin-top: 0.5rem;">Accedi</button>
+                </form>
+
+                <p id="auth-loading" style="display:none; margin-top: 1rem; color: var(--text-muted);">⏳ Caricamento...</p>
+            </div>
+        </section>
+
         <!-- Onboarding View -->
-        <section id="view-onboarding" class="view active">
+        <section id="view-onboarding" class="view hidden">
             <div class="glass-panel text-center">
                 <h2>Crea il tuo Piano Alimentare</h2>
                 <p>Rispondi a poche domande per permetterci di generare un piano perfetto per te, basato sul digiuno intermittente (colazione e pranzo).</p>
@@ -170,6 +198,7 @@
     </main>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="js/supabase-client.js"></script>
     <script src="js/data.js"></script>
     <script src="js/nutrition.js"></script>
     <script src="js/app.js"></script>
