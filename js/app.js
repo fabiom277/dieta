@@ -371,7 +371,7 @@ function generateShoppingList() {
         `;
 
         Object.values(items).sort((a, b) => a.name.localeCompare(b.name)).forEach((item, index) => {
-            const uid = `ing-${cat}-${index}`.replace(/\\s+/g, '-');
+            const uid = ('ing-' + cat + '-' + index).replace(/\s+/g, '-');
             html += `
                 <li class="ingredient-item">
                     <div style="display:flex; align-items:center;">
@@ -421,17 +421,17 @@ function generateShareLink() {
     
     // 3. Crea l'URL finale (indirizzo corrente + ?p=...)
     const baseUrl = window.location.href.split('?')[0];
-    const shareUrl = \`\${baseUrl}?p=\${base64Str}\`;
+    const shareUrl = baseUrl + '?p=' + base64Str;
 
     // 4. Mostra nel Modal
     document.getElementById('qrcode').innerHTML = ''; // pulisci precedente
-    new QRCode(document.getElementById("qrcode"), {
+    new QRCode(document.getElementById('qrcode'), {
         text: shareUrl,
         width: 200,
         height: 200,
-        colorDark : "#0f172a",
-        colorLight : "#ffffff",
-        correctLevel : QRCode.CorrectLevel.L
+        colorDark: '#0f172a',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.L
     });
 
     document.getElementById('share-link-text').textContent = shareUrl;
@@ -444,13 +444,13 @@ function hydratePlanFromIds(planIds) {
         const breakfast = recipesDB.find(r => r.id === day.b);
         const lunch = recipesDB.find(r => r.id === day.l);
         const meals = {
-            breakfast: { ...breakfast, mealInstanceId: `d\${day.day}-b`, excluded: false },
-            lunch: { ...lunch, mealInstanceId: `d\${day.day}-l`, excluded: false }
+            breakfast: { ...breakfast, mealInstanceId: 'd' + day.day + '-b', excluded: false },
+            lunch: { ...lunch, mealInstanceId: 'd' + day.day + '-l', excluded: false }
         };
         
         if (day.s) {
             const snack = snacksDB.find(r => r.id === day.s);
-            meals.snack = { ...snack, mealInstanceId: `d\${day.day}-s`, excluded: false };
+            meals.snack = { ...snack, mealInstanceId: 'd' + day.day + '-s', excluded: false };
         }
 
         return { day: day.day, meals: meals };
