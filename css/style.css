@@ -687,7 +687,68 @@ input:focus, select:focus {
     border: 1px solid var(--glass-border);
     border-radius: var(--border-radius-md);
     overflow: hidden;
-    min-width: 700px; /* Assicura che le colonne non siano troppo strette */
+    /* Rimosso min-width per permettere il resize responsivo */
+}
+
+.calendar-day-header {
+    background: rgba(0,0,0,0.3); 
+    padding: 0.75rem 0.5rem; 
+    text-align: center; 
+    font-size: 0.8rem; 
+    font-weight: 700; 
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.calendar-day-cell {
+    background: rgba(0,0,0,0.2); 
+    min-height: 120px; 
+    padding: 0.5rem; 
+    display: flex; 
+    flex-direction: column; 
+    gap: 0.4rem; 
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.calendar-day-cell.is-today {
+    border-color: var(--accent-primary); 
+    background: rgba(16, 185, 129, 0.05);
+}
+
+.calendar-date-number {
+    font-size: 0.85rem; 
+    font-weight: 700; 
+    color: var(--text-secondary); 
+    margin-bottom: 0.25rem;
+}
+.calendar-day-cell.is-today .calendar-date-number {
+    color: var(--accent-primary);
+}
+
+.calendar-meal-chip {
+    font-size: 0.7rem; 
+    padding: 4px 6px; 
+    border-radius: 6px; 
+    white-space: nowrap; 
+    overflow: hidden; 
+    text-overflow: ellipsis; 
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.calendar-meal-chip:hover {
+    transform: scale(1.02);
+    opacity: 0.9;
+}
+.calendar-meal-chip.breakfast { background: rgba(16, 185, 129, 0.15); color: #4ade80; }
+.calendar-meal-chip.lunch { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+.calendar-meal-chip.snack { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+
+.mobile-day-name {
+    display: none;
 }
 
 @media (max-width: 768px) {
@@ -710,12 +771,37 @@ input:focus, select:focus {
         transform: translateX(0);
     }
 
-    .calendar-month-grid {
-        min-width: 800px; /* Forza scorrimento orizzontale */
+    /* Mostra il nome del giorno solo su mobile */
+    .mobile-day-name {
+        display: inline-block !important;
     }
-    
-    .calendar-month-grid > div {
-        min-height: 120px !important;
+
+    /* Trasforma il calendario in una lista verticale su mobile */
+    .calendar-day-header {
+        display: none; /* Nascondi l'intestazione dei giorni su mobile */
+    }
+    .calendar-month-grid {
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+        background: transparent;
+        border: none;
+        border-radius: 0;
+    }
+    .calendar-day-cell {
+        min-height: auto;
+        border-radius: 12px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid var(--glass-border);
+        padding: 1rem;
+    }
+    .calendar-empty-slot {
+        display: none; /* Nascondi gli slot vuoti nella vista a lista */
+    }
+    .calendar-date-number {
+        font-size: 1rem;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        padding-bottom: 0.5rem;
+        margin-bottom: 0.75rem;
     }
 
     .recipe-body { padding: 1.5rem; }

@@ -882,7 +882,7 @@ function renderMonthlyCalendar() {
     // Header giorni settimana
     const weekDays = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
     weekDays.forEach(wd => {
-        html += `<div style="background:rgba(0,0,0,0.3); padding:0.5rem; text-align:center; font-size:0.75rem; font-weight:700; color:var(--text-secondary);">${wd}</div>`;
+        html += `<div class="calendar-day-header">${wd}</div>`;
     });
 
     const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); // 0 is Sunday
@@ -891,7 +891,7 @@ function renderMonthlyCalendar() {
 
     // Slot vuoti inizio mese
     for (let i = 0; i < emptySlots; i++) {
-        html += `<div style="background:rgba(255,255,255,0.02); min-height:80px;"></div>`;
+        html += `<div class="calendar-empty-slot"></div>`;
     }
 
     const todayStr = getTodayISO();
@@ -902,17 +902,30 @@ function renderMonthlyCalendar() {
         const dayPlan = appState.plan.find(p => p.date === dateStr);
         const isToday = dateStr === todayStr;
         
-        let dayStyle = `background:rgba(0,0,0,0.2); min-height:100px; padding:0.5rem; display:flex; flex-direction:column; gap:0.25rem; border: 1px solid transparent;`;
-        if (isToday) dayStyle += `border-color:var(--accent-primary); background:rgba(16, 185, 129, 0.05);`;
+        const todayClass = isToday ? 'is-today' : '';
+        const dayName = weekDays[new Date(currentYear, currentMonth, day).getDay() === 0 ? 6 : new Date(currentYear, currentMonth, day).getDay() - 1];
 
-        html += `<div style="${dayStyle}">
-            <div style="font-size:0.7rem; font-weight:700; color:${isToday ? 'var(--accent-primary)' : 'var(--text-secondary)'}; margin-bottom:0.25rem;">${day}</div>`;
+        html += `<div class="calendar-day-cell ${todayClass}">
+            <div class="calendar-date-number"><span style="width:2.5rem; font-weight:normal; opacity:0.7;" class="mobile-day-name">${dayName}</span> ${day}</div>`;
         
         if (dayPlan) {
-            html += `<div style="font-size:0.6rem; background:rgba(16, 185, 129, 0.1); color:#4ade80; padding:2px 4px; border-radius:4px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer;" onclick="openMealDetails('${dateStr}', 'breakfast')">☕ ${dayPlan.meals.breakfast.name}</div>`;
-            html += `<div style="font-size:0.6rem; background:rgba(59, 130, 246, 0.1); color:#60a5fa; padding:2px 4px; border-radius:4px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer;" onclick="openMealDetails('${dateStr}', 'lunch')">🍝 ${dayPlan.meals.lunch.name}</div>`;
+            if (dayPlan.meals.breakfast) {
+                html += `<div class="calendar-meal-chip breakfast" onclick="openMealDetails('${dateStr}', 'breakfast')">
+                    <span style="font-size:0.8rem">☕</span> <span>${dayPlan.meals.breakfast.name}</span>
+                </div>`;
+            }
+            if (dayPlan.meals.lunch) {
+                html += `<div class="calendar-meal-chip lunch" onclick="openMealDetails('${dateStr}', 'lunch')">
+                    <span style="font-size:0.8rem">🍝</span> <span>${dayPlan.meals.lunch.name}</span>
+                </div>`;
+            }
+            if (dayPlan.meals.snack) {
+                html += `<div class="calendar-meal-chip snack" onclick="openMealDetails('${dateStr}', 'snack')">
+                    <span style="font-size:0.8rem">🍎</span> <span>${dayPlan.meals.snack.name}</span>
+                </div>`;
+            }
             if (dayPlan.confirmed) {
-                html += `<div style="font-size:0.5rem; text-align:right; color:#4ade80; margin-top:auto;">✅</div>`;
+                html += `<div style="font-size:0.6rem; text-align:right; color:#4ade80; margin-top:auto; font-weight:bold;">✅ CONFERMATO</div>`;
             }
         }
         
