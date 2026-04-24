@@ -17,13 +17,7 @@ const mainNav = document.getElementById('main-nav');
 // AUTH HELPERS
 // ============================================================
 
-function switchAuthTab(tab) {
-    const submitBtn = document.getElementById('auth-submit');
-    document.getElementById('tab-login').classList.toggle('active', tab === 'login');
-    document.getElementById('tab-register').classList.toggle('active', tab === 'register');
-    submitBtn.textContent = tab === 'login' ? 'Accedi' : 'Registrati';
-    document.getElementById('auth-error').style.display = 'none';
-}
+
 
 function showAuthError(msg) {
     const el = document.getElementById('auth-error');
@@ -31,15 +25,41 @@ function showAuthError(msg) {
     el.style.display = 'block';
 }
 
+function switchAuthTab(type) {
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    const tabLogin = document.getElementById('tab-login');
+    const tabRegister = document.getElementById('tab-register');
+    const errorEl = document.getElementById('auth-error');
+
+    errorEl.style.display = 'none';
+
+    if (type === 'login') {
+        loginForm.style.display = 'block';
+        registerForm.style.display = 'none';
+        tabLogin.classList.add('active');
+        tabRegister.classList.remove('active');
+    } else {
+        loginForm.style.display = 'none';
+        registerForm.style.display = 'block';
+        tabLogin.classList.remove('active');
+        tabRegister.classList.add('active');
+    }
+}
+
 async function handleAuthSubmit(e) {
     e.preventDefault();
-    const email    = document.getElementById('auth-email').value.trim();
-    const password = document.getElementById('auth-password').value;
-    const isLogin  = document.getElementById('tab-login').classList.contains('active');
+    const isLogin = e.target.id === 'login-form';
+    const email    = document.getElementById(isLogin ? 'login-email' : 'register-email').value.trim();
+    const password = document.getElementById(isLogin ? 'login-password' : 'register-password').value;
 
-    document.getElementById('auth-loading').style.display = 'block';
-    document.getElementById('auth-submit').disabled = true;
-    document.getElementById('auth-error').style.display = 'none';
+    const loadingEl = document.getElementById('auth-loading');
+    const errorEl   = document.getElementById('auth-error');
+    const submitBtn = document.getElementById(isLogin ? 'login-submit' : 'register-submit');
+
+    loadingEl.style.display = 'block';
+    submitBtn.disabled = true;
+    errorEl.style.display = 'none';
 
     try {
         let result;
@@ -48,9 +68,8 @@ async function handleAuthSubmit(e) {
         } else {
             result = await _supabase.auth.signUp({ email, password });
             if (!result.error && result.data.user && !result.data.session) {
-                // Email confirmation required
-                document.getElementById('auth-loading').style.display = 'none';
-                document.getElementById('auth-submit').disabled = false;
+                loadingEl.style.display = 'none';
+                submitBtn.disabled = false;
                 showAuthError('✅ Registrazione avvenuta! Controlla la tua email per confermare l\'account, poi accedi.');
                 return;
             }
@@ -59,13 +78,12 @@ async function handleAuthSubmit(e) {
         if (result.error) {
             showAuthError(translateAuthError(result.error.message));
         }
-        // Auth state listener will handle the rest on success
     } catch (err) {
         showAuthError('Errore di connessione. Riprova.');
+    } finally {
+        loadingEl.style.display = 'none';
+        submitBtn.disabled = false;
     }
-
-    document.getElementById('auth-loading').style.display = 'none';
-    document.getElementById('auth-submit').disabled = false;
 }
 
 function translateAuthError(msg) {
@@ -287,7 +305,11 @@ function setupEventListeners() {
     navShopping.addEventListener('click',  () => showView('shopping'));
     document.getElementById('nav-profile').addEventListener('click', () => showView('profile'));
 
-    document.getElementById('auth-form').addEventListener('submit', handleAuthSubmit);
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) loginForm.addEventListener('submit', handleAuthSubmit);
+    
+    const registerForm = document.getElementById('register-form');
+    if (registerForm) registerForm.addEventListener('submit', handleAuthSubmit);
 
     document.getElementById('btn-logout').addEventListener('click', async () => {
         await _supabase.auth.signOut();

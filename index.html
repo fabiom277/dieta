@@ -45,6 +45,7 @@
 
                 <div id="auth-error" style="display:none; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #f87171; padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.9rem;"></div>
 
+                <!-- Form Login -->
                 <form id="login-form">
                     <div class="form-group">
                         <input type="email" id="login-email" placeholder="Email" required autocomplete="email">
@@ -52,9 +53,23 @@
                     <div class="form-group">
                         <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password">
                     </div>
-                    <button type="submit" class="btn btn-primary" style="width:100%">Accedi</button>
+                    <button type="submit" id="login-submit" class="btn btn-primary" style="width:100%">Accedi</button>
                     <p style="text-align:center; margin-top:1rem; font-size:0.8rem; color:var(--text-secondary);">
                         Problemi di accesso? <a href="#" onclick="resetAppSession()" style="color:var(--accent-primary)">Resetta sessione</a>
+                    </p>
+                </form>
+
+                <!-- Form Registrazione -->
+                <form id="register-form" style="display:none;">
+                    <div class="form-group">
+                        <input type="email" id="register-email" placeholder="Email" required autocomplete="email">
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="register-password" placeholder="Scegli una Password (min. 6 car.)" required autocomplete="new-password">
+                    </div>
+                    <button type="submit" id="register-submit" class="btn btn-primary" style="width:100%">Crea Account</button>
+                    <p style="text-align:center; margin-top:1rem; font-size:0.8rem; color:var(--text-secondary);">
+                        Hai già un account? <a href="#" onclick="switchAuthTab('login')" style="color:var(--accent-primary)">Torna all'accesso</a>
                     </p>
                 </form>
 
