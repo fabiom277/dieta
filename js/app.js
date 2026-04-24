@@ -4,9 +4,6 @@ let currentUser = null; // Supabase auth user
 let saveTimeout = null;
 let sessionSkippedIds = []; // Ricette scartate in questa sessione
 
-function getTodayISO() {
-    return new Date().toISOString().slice(0, 10);
-}
 
 // --- DOM REFS ---
 const navDashboard = document.getElementById('nav-dashboard');
@@ -166,8 +163,11 @@ function ensurePlanCoversWindow() {
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', () => {
+    console.log("NutriPlan: App Inizializzata");
+    
     // Listen to auth state changes (login, logout, page load)
     _supabase.auth.onAuthStateChange(async (event, session) => {
+        console.log("NutriPlan: Auth State Change", event, session ? "Sessione attiva" : "Nessuna sessione");
         if (session && session.user) {
             currentUser = session.user;
             const hasData = await loadFromCloud();
@@ -184,6 +184,9 @@ document.addEventListener('DOMContentLoaded', () => {
             showView('auth');
         }
     });
+
+    const onboardingForm = document.getElementById('onboarding-form');
+    if (onboardingForm) onboardingForm.addEventListener('submit', handleOnboardingSubmit);
 });
 
 function setupEventListeners() {
@@ -309,11 +312,6 @@ function handleOnboardingSubmit(e) {
     debouncedSave();
     showView('dashboard');
 }
-
-document.addEventListener('DOMContentLoaded', () => {
-    const form = document.getElementById('onboarding-form');
-    if (form) form.addEventListener('submit', handleOnboardingSubmit);
-});
 
 // ============================================================
 // DASHBOARD RENDERING

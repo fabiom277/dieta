@@ -1,5 +1,9 @@
 // --- NUTRITION LOGIC ---
 
+function getTodayISO() {
+    return new Date().toISOString().slice(0, 10);
+}
+
 function calculateBMI(weight, heightCm) {
     const heightM = heightCm / 100;
     const bmi = weight / (heightM * heightM);
@@ -151,7 +155,7 @@ function generateSingleDay(targetCalories, dislikesStr, bannedRecipeIds, avoidId
 function generateMonthlyPlan(targetCalories, dislikesStr, bannedRecipeIds) {
     const plan = [];
     const banned = bannedRecipeIds || [];
-    const today = getTodayISO ? getTodayISO() : new Date().toISOString().slice(0, 10);
+    const today = getTodayISO();
     
     // Teniamo traccia degli ID usati in questa generazione per massimizzare la varietà
     const usedInPlanIds = [];
