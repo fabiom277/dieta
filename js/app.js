@@ -3,6 +3,10 @@ let appState = { user: null, plan: [] };
 let currentUser = null; // Supabase auth user
 let saveTimeout = null;
 
+function getTodayISO() {
+    return new Date().toISOString().slice(0, 10);
+}
+
 // --- DOM REFS ---
 const navDashboard = document.getElementById('nav-dashboard');
 const navShopping  = document.getElementById('nav-shopping');
@@ -105,17 +109,58 @@ async function loadFromCloud() {
     if (error || !data || !data.nutrition_profile) return false;
 
     appState.user = data.nutrition_profile;
+    if (!appState.user.bannedRecipeIds) appState.user.bannedRecipeIds = [];
     appState.plan = data.meal_plan || [];
 
-    // Ensure 'excluded' flag exists on all meals
-    appState.plan.forEach(day => {
-        ['breakfast', 'snack', 'lunch'].forEach(t => {
-            if (day.meals[t] && day.meals[t].excluded === undefined) {
-                day.meals[t].excluded = false;
-            }
+    // Migrazione: se il piano è nel vecchio formato (usando 'day' invece di 'date')
+    if (appState.plan.length > 0 && appState.plan[0].day !== undefined) {
+        const today = getTodayISO();
+        appState.plan = appState.plan.map((p, idx) => {
+            const d = new Date(today + 'T00:00:00');
+            d.setDate(d.getDate() + idx);
+            const dateStr = d.toISOString().slice(0, 10);
+            const newP = { date: dateStr, meals: p.meals };
+            // Update instance IDs
+            ['breakfast', 'snack', 'lunch'].forEach(t => {
+                if (newP.meals[t]) newP.meals[t].mealInstanceId = `${dateStr}-${t}`;
+            });
+            return newP;
         });
-    });
+    }
+
+    ensurePlanCoversWindow();
     return true;
+}
+
+function ensurePlanCoversWindow() {
+    if (!appState.user) return;
+    const today = getTodayISO();
+    const windowDays = 7;
+    
+    // Rimuovi giorni più vecchi di 3 giorni (teniamo un po' di storico ma non troppo)
+    const threeDaysAgo = new Date(today + 'T00:00:00');
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    const limitDate = threeDaysAgo.toISOString().slice(0, 10);
+    appState.plan = appState.plan.filter(p => p.date >= limitDate);
+
+    // Aggiungi giorni mancanti per coprire oggi + 6
+    for (let i = 0; i < windowDays; i++) {
+        const d = new Date(today + 'T00:00:00');
+        d.setDate(d.getDate() + i);
+        const dateStr = d.toISOString().slice(0, 10);
+        
+        if (!appState.plan.find(p => p.date === dateStr)) {
+            const newDay = generateSingleDay(appState.user.targetCalories, appState.user.dislikes, appState.user.bannedRecipeIds);
+            newDay.date = dateStr;
+            // Set instance IDs
+            ['breakfast', 'snack', 'lunch'].forEach(t => {
+                if (newDay.meals[t]) newDay.meals[t].mealInstanceId = `${dateStr}-${t}`;
+            });
+            appState.plan.push(newDay);
+        }
+    }
+    // Ordina per data
+    appState.plan.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 // ============================================================
@@ -159,22 +204,24 @@ function setupEventListeners() {
         // onAuthStateChange will fire and redirect to auth view
     });
 
-    document.querySelector('.close-modal').addEventListener('click', closeModal);
     document.querySelector('.close-qr-modal').addEventListener('click', () => {
         document.getElementById('qr-modal').classList.add('hidden');
+    });
+
+    // Close modal on background click
+    document.getElementById('meal-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'meal-modal') closeModal();
+    });
+    document.getElementById('qr-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'qr-modal') document.getElementById('qr-modal').classList.add('hidden');
     });
 
     document.getElementById('btn-share').addEventListener('click', generateShareLink);
     document.getElementById('generate-shopping').addEventListener('click', generateShoppingList);
 
     document.getElementById('btn-regenerate').addEventListener('click', () => {
-        if (confirm('Vuoi rigenerare il piano settimanale? Il piano attuale verrà sostituito.')) {
-            appState.plan = generateMonthlyPlan(appState.user.targetCalories, appState.user.dislikes);
-            appState.plan.forEach(day => {
-                if (day.meals.breakfast) day.meals.breakfast.excluded = false;
-                if (day.meals.snack)     day.meals.snack.excluded = false;
-                if (day.meals.lunch)     day.meals.lunch.excluded = false;
-            });
+        if (confirm('Vuoi rigenerare il piano per i prossimi 7 giorni?')) {
+            appState.plan = generateMonthlyPlan(appState.user.targetCalories, appState.user.dislikes, appState.user.bannedRecipeIds);
             debouncedSave();
             showView('dashboard');
         }
@@ -225,6 +272,7 @@ function showView(viewName) {
         viewShopping.classList.add('active');
         navShopping.classList.add('active');
         mainNav.classList.remove('hidden');
+        renderShoppingSelector();
 
     } else if (viewName === 'profile') {
         const pv = document.getElementById('view-profile');
@@ -255,14 +303,8 @@ function handleOnboardingSubmit(e) {
     const tdee           = calculateTDEE(bmr, activity);
     const targetCalories = calculateTargetCalories(tdee, goal);
 
-    appState.user = { age, gender, weight, height, activity, goal, dislikes, targetCalories };
-    appState.plan = generateMonthlyPlan(targetCalories, dislikes);
-
-    appState.plan.forEach(day => {
-        if (day.meals.breakfast) day.meals.breakfast.excluded = false;
-        if (day.meals.snack)     day.meals.snack.excluded = false;
-        if (day.meals.lunch)     day.meals.lunch.excluded = false;
-    });
+    appState.user = { age, gender, weight, height, activity, goal, dislikes, targetCalories, bannedRecipeIds: [] };
+    appState.plan = generateMonthlyPlan(targetCalories, dislikes, []);
 
     debouncedSave();
     showView('dashboard');
@@ -279,13 +321,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function renderDashboard() {
     if (!appState.user) return;
+    ensurePlanCoversWindow(); // Assicura che oggi sia coperto
+
     document.getElementById('caloric-info').innerHTML =
         'Fabbisogno calcolato: <span class="highlight">' + appState.user.targetCalories + ' kcal</span>/giorno';
 
     const grid = document.getElementById('calendar-grid');
     grid.innerHTML = '';
 
-    appState.plan.forEach(dayPlan => {
+    const today = getTodayISO();
+    const visiblePlan = appState.plan.filter(p => p.date >= today).slice(0, 7);
+
+    visiblePlan.forEach(dayPlan => {
         let totalCals = 0;
         if (!dayPlan.meals.breakfast.excluded) totalCals += dayPlan.meals.breakfast.calories;
         if (!dayPlan.meals.lunch.excluded)     totalCals += dayPlan.meals.lunch.calories;
@@ -293,34 +340,45 @@ function renderDashboard() {
 
         const card = document.createElement('div');
         card.className = 'day-card';
+        if (dayPlan.date === today) card.classList.add('today');
 
-        let mealsHtml = renderMealSlot(dayPlan.day, 'breakfast', dayPlan.meals.breakfast);
-        if (dayPlan.meals.snack) mealsHtml += renderMealSlot(dayPlan.day, 'snack', dayPlan.meals.snack);
-        mealsHtml += renderMealSlot(dayPlan.day, 'lunch', dayPlan.meals.lunch);
+        const dateObj = new Date(dayPlan.date + 'T00:00:00');
+        const options = { weekday: 'long', day: 'numeric', month: 'short' };
+        const dateStr = dateObj.toLocaleDateString('it-IT', options);
 
-        card.innerHTML = '<div class="day-header"><h3>Giorno ' + dayPlan.day + '</h3>'
-            + '<span class="day-kcal">' + totalCals + ' kcal <span style="font-size:0.7em;font-weight:normal;">effettive</span></span></div>'
+        let mealsHtml = renderMealSlot(dayPlan.date, 'breakfast', dayPlan.meals.breakfast);
+        if (dayPlan.meals.snack) mealsHtml += renderMealSlot(dayPlan.date, 'snack', dayPlan.meals.snack);
+        mealsHtml += renderMealSlot(dayPlan.date, 'lunch', dayPlan.meals.lunch);
+
+        card.innerHTML = '<div class="day-header"><h3>' + dateStr.charAt(0).toUpperCase() + dateStr.slice(1) + '</h3>'
+            + '<span class="day-kcal">' + totalCals + ' kcal</span></div>'
             + mealsHtml;
         grid.appendChild(card);
     });
 
     document.querySelectorAll('.btn-view-meal').forEach(btn => {
         btn.addEventListener('click', e => {
-            openMealDetails(parseInt(e.target.dataset.day), e.target.dataset.type);
+            openMealDetails(e.target.dataset.date, e.target.dataset.type);
         });
     });
 
     document.querySelectorAll('.btn-swap').forEach(btn => {
         btn.addEventListener('click', e => {
-            swapMeal(parseInt(e.target.dataset.day), e.target.dataset.type);
+            swapMeal(e.target.dataset.date, e.target.dataset.type);
+        });
+    });
+
+    document.querySelectorAll('.btn-ban').forEach(btn => {
+        btn.addEventListener('click', e => {
+            banRecipe(e.target.dataset.date, e.target.dataset.type);
         });
     });
 
     document.querySelectorAll('.exclude-checkbox').forEach(cb => {
         cb.addEventListener('change', e => {
-            const day  = parseInt(e.target.dataset.day);
+            const date = e.target.dataset.date;
             const type = e.target.dataset.type;
-            const idx  = appState.plan.findIndex(p => p.day === day);
+            const idx  = appState.plan.findIndex(p => p.date === date);
             appState.plan[idx].meals[type].excluded = !e.target.checked;
             debouncedSave();
             renderDashboard();
@@ -328,7 +386,7 @@ function renderDashboard() {
     });
 }
 
-function renderMealSlot(dayIndex, mealType, meal) {
+function renderMealSlot(date, mealType, meal) {
     const labels = { breakfast: 'Colazione', lunch: 'Pranzo', snack: 'Spuntino' };
     const excludedClass  = meal.excluded ? 'excluded' : '';
     const checkedAttr    = meal.excluded ? '' : 'checked';
@@ -336,9 +394,12 @@ function renderMealSlot(dayIndex, mealType, meal) {
         + '<div class="meal-type"><span>' + labels[mealType] + '</span><span>' + meal.calories + ' kcal</span></div>'
         + '<div class="meal-name">' + meal.name + '</div>'
         + '<div class="meal-macros"><span>P: ' + meal.macros.protein + 'g</span><span>C: ' + meal.macros.carbs + 'g</span><span>G: ' + meal.macros.fat + 'g</span></div>'
-        + '<div class="meal-toggle"><input type="checkbox" class="exclude-checkbox" data-day="' + dayIndex + '" data-type="' + mealType + '" ' + checkedAttr + '><label>Includi Pasto</label></div>'
-        + '<div class="meal-actions"><button class="btn-small btn-view-meal" data-day="' + dayIndex + '" data-type="' + mealType + '">Ricetta</button>'
-        + '<button class="btn-small btn-swap" data-day="' + dayIndex + '" data-type="' + mealType + '">Cambia</button></div>'
+        + '<div class="meal-toggle"><input type="checkbox" class="exclude-checkbox" data-date="' + date + '" data-type="' + mealType + '" ' + checkedAttr + '><label>Includi Pasto</label></div>'
+        + '<div class="meal-actions">'
+        + '<button class="btn-small btn-view-meal" data-date="' + date + '" data-type="' + mealType + '">Ricetta</button>'
+        + '<button class="btn-small btn-swap" data-date="' + date + '" data-type="' + mealType + '">Cambia</button>'
+        + '<button class="btn-small btn-ban" data-date="' + date + '" data-type="' + mealType + '" title="Non propormi più questa ricetta" style="color:#f87171; border-color:rgba(239,68,68,0.2);">🚫</button>'
+        + '</div>'
         + '</div>';
 }
 
@@ -346,12 +407,15 @@ function renderMealSlot(dayIndex, mealType, meal) {
 // MEAL DETAIL MODAL
 // ============================================================
 
-function openMealDetails(dayIndex, mealType) {
-    const dayPlan = appState.plan.find(p => p.day === dayIndex);
+function openMealDetails(date, mealType) {
+    const dayPlan = appState.plan.find(p => p.date === date);
     const meal    = dayPlan.meals[mealType];
     const labels  = { breakfast: 'Colazione', lunch: 'Pranzo', snack: 'Spuntino' };
 
-    let html = '<div class="meal-type">Dieta Mediterranea - ' + labels[mealType] + ' - Giorno ' + dayIndex + '</div>'
+    const dateObj = new Date(date + 'T00:00:00');
+    const dateStr = dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' });
+
+    let html = '<div class="meal-type">' + labels[mealType] + ' - ' + dateStr + '</div>'
         + '<h2>' + meal.name + '</h2>';
 
     if (meal.imageUrl) {
@@ -371,13 +435,16 @@ function openMealDetails(dayIndex, mealType) {
         + meal.instructions.map(s => '<li>' + s + '</li>').join('')
         + '</ol></div>';
 
-    if (meal.sourceUrl) {
+    // Link fix: show only if it looks like a real recipe link (contains more than just the domain)
+    if (meal.sourceUrl && meal.sourceUrl.length > 30) {
         html += '<div style="margin-top:2rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.1);">'
             + '<a href="' + meal.sourceUrl + '" target="_blank" style="color:var(--accent-primary);text-decoration:none;font-weight:600;">🔗 Vai alla Ricetta Originale</a></div>';
     }
 
     document.getElementById('meal-details').innerHTML = html;
     document.getElementById('meal-modal').classList.remove('hidden');
+    // Ensure modal scroll is at top
+    document.querySelector('#meal-modal .modal-content').scrollTop = 0;
 }
 
 function closeModal() { document.getElementById('meal-modal').classList.add('hidden'); }
@@ -386,17 +453,28 @@ function closeModal() { document.getElementById('meal-modal').classList.add('hid
 // SWAP MEAL
 // ============================================================
 
-function swapMeal(dayIndex, mealType) {
-    const idx     = appState.plan.findIndex(p => p.day === dayIndex);
+function swapMeal(date, mealType) {
+    const idx     = appState.plan.findIndex(p => p.date === date);
     const current = appState.plan[idx].meals[mealType];
-    const alt     = findAlternativeMeal(current, appState.user.dislikes, current.calories);
+    const alt     = findAlternativeMeal(current, appState.user.dislikes, current.calories, appState.user.bannedRecipeIds);
     if (alt) {
         alt.excluded = false;
-        appState.plan[idx].meals[mealType] = Object.assign({}, alt, { mealInstanceId: 'd' + dayIndex + '-' + mealType + '-' + Date.now() });
+        appState.plan[idx].meals[mealType] = Object.assign({}, alt, { mealInstanceId: date + '-' + mealType + '-' + Date.now() });
         debouncedSave();
         renderDashboard();
     } else {
         alert('Nessuna alternativa trovata nel database.');
+    }
+}
+
+function banRecipe(date, mealType) {
+    const idx = appState.plan.findIndex(p => p.date === date);
+    const meal = appState.plan[idx].meals[mealType];
+    if (confirm(`Non ti piace "${meal.name}"? Non te la proporremo più.`)) {
+        if (!appState.user.bannedRecipeIds.includes(meal.id)) {
+            appState.user.bannedRecipeIds.push(meal.id);
+        }
+        swapMeal(date, mealType); // Sostituisci subito
     }
 }
 
@@ -412,18 +490,77 @@ function renderProfile() {
     const bmiData    = calculateBMI(u.weight, u.height);
     const userEmail  = currentUser ? currentUser.email : '';
 
-    document.getElementById('profile-data').innerHTML = '<p style="color:var(--text-muted);margin-bottom:1.5rem;font-size:0.9rem;">Account: <strong style="color:var(--accent-primary);">' + userEmail + '</strong></p>'
-        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem;">'
-        + profileCard('ETÀ', u.age + ' anni')
-        + profileCard('CORPO', u.weight + ' kg · ' + u.height + ' cm')
-        + profileCard('BMI', bmiData.bmi + ' <span style="font-size:0.8rem;color:var(--text-muted);">(' + bmiData.category + ')</span>', true)
-        + profileCard('TARGET CALORICO', u.targetCalories + ' kcal/giorno', true)
-        + profileCard('ATTIVITÀ', actLabels[u.activity] || u.activity)
-        + profileCard('OBIETTIVO', goalLabels[u.goal] || u.goal)
+    let html = '<p style="color:var(--text-muted);margin-bottom:1.5rem;font-size:0.9rem;">Account: <strong style="color:var(--accent-primary);">' + userEmail + '</strong></p>'
+        + '<div class="profile-grid">'
+        + profileEditCard('Età', u.age, 'number', 'age')
+        + profileEditCard('Peso (kg)', u.weight, 'number', 'weight')
+        + profileEditCard('Altezza (cm)', u.height, 'number', 'height')
+        + profileEditCard('Livello Attività', actLabels[u.activity] || u.activity, 'select', 'activity', actLabels)
+        + profileEditCard('Obiettivo', goalLabels[u.goal] || u.goal, 'select', 'goal', goalLabels)
         + '</div>'
-        + (u.dislikes && u.dislikes.trim() ? '<div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:12px;padding:1rem;">'
-            + '<div style="font-size:0.75rem;color:#f87171;margin-bottom:0.5rem;font-weight:600;">🚫 CIBI ESCLUSI</div>'
-            + '<div style="color:var(--text-secondary);">' + u.dislikes + '</div></div>' : '');
+        + '<div class="profile-summary-cards">'
+        + profileCard('BMI', bmiData.bmi + ' (' + bmiData.category + ')', true)
+        + profileCard('TARGET CALORICO', u.targetCalories + ' kcal/giorno', true)
+        + '</div>'
+        + '<div style="margin-top:1.5rem;">'
+        + '<label style="display:block;margin-bottom:0.5rem;">Cibi Esclusi (separati da virgola)</label>'
+        + '<div style="display:flex;gap:0.5rem;">'
+        + '<input type="text" id="edit-dislikes" value="' + (u.dislikes || '') + '" style="flex:1;">'
+        + '<button class="btn btn-small" onclick="updateProfileField(\'dislikes\', document.getElementById(\'edit-dislikes\').value)">Salva</button>'
+        + '</div></div>';
+
+    document.getElementById('profile-data').innerHTML = html;
+}
+
+function profileEditCard(label, value, type, field, options) {
+    return '<div class="profile-edit-card">'
+        + '<div class="label">' + label + '</div>'
+        + '<div class="value-row">'
+        + '<span class="value">' + value + '</span>'
+        + '<button class="btn-edit-inline" onclick="showInlineEdit(this, \'' + field + '\', \'' + type + '\')">✏️</button>'
+        + '</div>'
+        + '</div>';
+}
+
+function showInlineEdit(btn, field, type) {
+    const row = btn.closest('.value-row');
+    const oldValue = row.querySelector('.value').textContent;
+    let inputHtml = '';
+
+    if (field === 'activity') {
+        inputHtml = '<select id="inline-edit-' + field + '">'
+            + '<option value="1.2">Sedentario</option>'
+            + '<option value="1.375">Leggero</option>'
+            + '<option value="1.55">Moderato</option>'
+            + '<option value="1.725">Attivo</option>'
+            + '</select>';
+    } else if (field === 'goal') {
+        inputHtml = '<select id="inline-edit-' + field + '">'
+            + '<option value="lose">Perdita peso</option>'
+            + '<option value="maintain">Mantenimento</option>'
+            + '<option value="gain">Aumento massa</option>'
+            + '</select>';
+    } else {
+        inputHtml = '<input type="' + type + '" id="inline-edit-' + field + '" value="' + parseFloat(oldValue) + '">';
+    }
+
+    row.innerHTML = inputHtml + '<button class="btn-save-inline" onclick="updateProfileField(\'' + field + '\', document.getElementById(\'inline-edit-' + field + '\').value)">✓</button>';
+}
+
+function updateProfileField(field, value) {
+    if (field === 'weight' || field === 'height' || field === 'age' || field === 'activity') {
+        appState.user[field] = parseFloat(value);
+    } else {
+        appState.user[field] = value;
+    }
+
+    // Ricalcola targetCalories
+    const bmr = calculateBMR(appState.user.weight, appState.user.height, appState.user.age, appState.user.gender);
+    const tdee = calculateTDEE(bmr, appState.user.activity);
+    appState.user.targetCalories = calculateTargetCalories(tdee, appState.user.goal);
+
+    debouncedSave();
+    renderProfile();
 }
 
 function profileCard(label, value, accent) {
@@ -433,18 +570,34 @@ function profileCard(label, value, accent) {
         + '</div>';
 }
 
-// ============================================================
-// SHOPPING LIST
-// ============================================================
+function renderShoppingSelector() {
+    const container = document.getElementById('shopping-days-selector');
+    if (!container || !appState.plan) return;
+    
+    container.innerHTML = '';
+    const today = getTodayISO();
+    const visiblePlan = appState.plan.filter(p => p.date >= today).slice(0, 7);
+
+    visiblePlan.forEach(p => {
+        const dateObj = new Date(p.date + 'T00:00:00');
+        const dayName = dateObj.toLocaleDateString('it-IT', { weekday: 'short' });
+        const dayNum  = dateObj.getDate();
+        
+        const label = document.createElement('label');
+        label.style = "display: flex; align-items: center; gap: 0.5rem; cursor: pointer; background: rgba(255,255,255,0.05); padding: 0.5rem 0.8rem; border-radius: 8px; border: 1px solid var(--glass-border);";
+        label.innerHTML = `<input type="checkbox" class="day-checkbox" value="${p.date}" checked> ${dayName} ${dayNum}`;
+        container.appendChild(label);
+    });
+}
 
 function generateShoppingList() {
-    const selectedDays = Array.from(document.querySelectorAll('.day-checkbox:checked')).map(cb => parseInt(cb.value));
-    if (selectedDays.length === 0) {
+    const selectedDates = Array.from(document.querySelectorAll('.day-checkbox:checked')).map(cb => cb.value);
+    if (selectedDates.length === 0) {
         document.getElementById('shopping-list-content').innerHTML = '<p class="text-center text-muted">Seleziona almeno un giorno.</p>';
         return;
     }
 
-    const daysToShop = appState.plan.filter(p => selectedDays.includes(p.day));
+    const daysToShop = appState.plan.filter(p => selectedDates.includes(p.date));
     const categories = {};
 
     daysToShop.forEach(dayPlan => {
@@ -468,8 +621,9 @@ function generateShoppingList() {
     }
 
     const icons = { 'Ortofrutta': '🥬', 'Carne e Pesce': '🥩', 'Latticini': '🧀', 'Dispensa': '🥫', 'Panetteria': '🍞', 'Altro': '🛒' };
-    let html = '<h3 style="margin-bottom:1.5rem;text-align:center;">Spesa per i Giorni: ' + selectedDays.join(', ') + '</h3>';
-    html += '<p class="text-center text-muted" style="margin-bottom:2rem;font-size:0.9rem;">Spunta gli ingredienti che hai già in dispensa.</p>';
+    
+    let html = '<h3 style="margin-bottom:1.5rem;text-align:center;">Lista della Spesa</h3>';
+    html += '<p class="text-center text-muted" style="margin-bottom:2rem;font-size:0.9rem;">Ingredienti combinati per i giorni selezionati.</p>';
 
     Object.keys(categories).sort().forEach(cat => {
         html += '<div class="category-section" style="margin-bottom:2rem;">'
