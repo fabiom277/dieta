@@ -210,6 +210,12 @@ function ensurePlanCoversWindow() {
 document.addEventListener('DOMContentLoaded', () => {
     console.log("NutriPlan: App Inizializzata (DOM Ready)");
     
+    // Controllo preventivo per sessioni corrotte (comune fuori da incognito)
+    if (localStorage.getItem('supabase.auth.token') && !sessionStorage.getItem('nutriplan_init_check')) {
+        console.log("NutriPlan: Eseguo controllo integrità sessione...");
+        sessionStorage.setItem('nutriplan_init_check', 'true');
+    }
+
     _supabase.auth.onAuthStateChange(async (event, session) => {
         console.log("NutriPlan: Auth Event ->", event);
         
@@ -217,10 +223,11 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log("NutriPlan: Sessione attiva per", session.user.email);
             try {
                 currentUser = session.user;
-                const hasData = await loadFromCloud();
                 
-                // Assicura che i listener siano pronti
+                // Assicura che i listener siano pronti PRIMA di caricare i dati
                 setupEventListeners();
+                
+                const hasData = await loadFromCloud();
                 
                 if (hasData) {
                     console.log("NutriPlan: Dati trovati, mostro Dashboard.");
@@ -231,10 +238,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (error) {
                 console.error("NutriPlan: Errore critico in onAuthStateChange:", error);
+                // Se c'è un errore persistente, puliamo e riproviamo
+                if (event === 'SIGNED_IN') {
+                    console.warn("NutriPlan: Tentativo di ripristino sessione...");
+                    await _supabase.auth.signOut();
+                    localStorage.clear();
+                    location.reload();
+                }
                 showView('auth');
             }
         } else {
-            console.log("NutriPlan: Nessuna sessione, mostro Auth.");
+            console.log("NutriPlan: Nessuna sessione o logout, mostro Auth.");
             currentUser = null;
             appState = { user: null, plan: [] };
             setupEventListeners();
@@ -243,12 +257,25 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Rimuove loader globale se presente
         const loader = document.getElementById('global-loader');
-        if (loader) loader.style.display = 'none';
+        if (loader) {
+            loader.style.opacity = '0';
+            setTimeout(() => loader.style.display = 'none', 500);
+        }
     });
 
     const onboardingForm = document.getElementById('onboarding-form');
     if (onboardingForm) onboardingForm.addEventListener('submit', handleOnboardingSubmit);
 });
+
+/**
+ * Funzione di emergenza per resettare l'app se bloccata (utilizzabile dalla console o link)
+ */
+async function resetAppSession() {
+    await _supabase.auth.signOut();
+    localStorage.clear();
+    sessionStorage.clear();
+    location.reload();
+}
 
 function setupEventListeners() {
     // Guard: don't add listeners twice
