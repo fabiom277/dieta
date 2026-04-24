@@ -245,7 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 4000);
 
-    _supabase.auth.onAuthStateChange(async (event, session) => {
+    async function handleAuthChange(event, session) {
         console.log("NutriPlan: Auth Event ->", event);
         
         if (session && session.user) {
@@ -266,7 +266,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     showView('onboarding');
                 }
             } catch (error) {
-                console.error("NutriPlan: Errore critico in onAuthStateChange:", error);
+                console.error("NutriPlan: Errore critico in handleAuthChange:", error);
                 
                 // Mostriamo l'errore in UI invece di ricaricare la pagina all'infinito
                 const errorEl = document.getElementById('auth-error');
@@ -291,6 +291,17 @@ document.addEventListener('DOMContentLoaded', () => {
             loader.style.opacity = '0';
             setTimeout(() => loader.style.display = 'none', 500);
         }
+    }
+
+    // 1. Recupera la sessione iniziale proattivamente (risolve il blocco F5)
+    _supabase.auth.getSession().then(({ data: { session } }) => {
+        handleAuthChange('INITIAL_SESSION_MANUAL', session);
+    });
+
+    // 2. Ascolta i cambiamenti successivi
+    _supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'INITIAL_SESSION') return; // Gestita manualmente sopra
+        handleAuthChange(event, session);
     });
 
     const onboardingForm = document.getElementById('onboarding-form');
