@@ -2,6 +2,7 @@
 let appState = { user: null, plan: [] };
 let currentUser = null; // Supabase auth user
 let saveTimeout = null;
+let sessionSkippedIds = []; // Ricette scartate in questa sessione
 
 function getTodayISO() {
     return new Date().toISOString().slice(0, 10);
@@ -341,18 +342,24 @@ function renderDashboard() {
         const card = document.createElement('div');
         card.className = 'day-card';
         if (dayPlan.date === today) card.classList.add('today');
+        if (dayPlan.confirmed) card.classList.add('confirmed');
 
         const dateObj = new Date(dayPlan.date + 'T00:00:00');
         const options = { weekday: 'long', day: 'numeric', month: 'short' };
         const dateStr = dateObj.toLocaleDateString('it-IT', options);
 
-        let mealsHtml = renderMealSlot(dayPlan.date, 'breakfast', dayPlan.meals.breakfast);
-        if (dayPlan.meals.snack) mealsHtml += renderMealSlot(dayPlan.date, 'snack', dayPlan.meals.snack);
-        mealsHtml += renderMealSlot(dayPlan.date, 'lunch', dayPlan.meals.lunch);
+        let mealsHtml = renderMealSlot(dayPlan.date, 'breakfast', dayPlan.meals.breakfast, dayPlan.confirmed);
+        if (dayPlan.meals.snack) mealsHtml += renderMealSlot(dayPlan.date, 'snack', dayPlan.meals.snack, dayPlan.confirmed);
+        mealsHtml += renderMealSlot(dayPlan.date, 'lunch', dayPlan.meals.lunch, dayPlan.confirmed);
+
+        const confirmBtn = dayPlan.confirmed 
+            ? `<button class="btn-unlock-day" onclick="unlockDay('${dayPlan.date}')">🔓 Sblocca Giorno</button>`
+            : `<button class="btn-confirm-day" onclick="confirmDay('${dayPlan.date}')">✅ Conferma Giorno</button>`;
 
         card.innerHTML = '<div class="day-header"><h3>' + dateStr.charAt(0).toUpperCase() + dateStr.slice(1) + '</h3>'
             + '<span class="day-kcal">' + totalCals + ' kcal</span></div>'
-            + mealsHtml;
+            + mealsHtml
+            + `<div class="day-footer">${confirmBtn}</div>`;
         grid.appendChild(card);
     });
 
@@ -386,20 +393,32 @@ function renderDashboard() {
     });
 }
 
-function renderMealSlot(date, mealType, meal) {
+function renderMealSlot(date, mealType, meal, isConfirmed) {
     const labels = { breakfast: 'Colazione', lunch: 'Pranzo', snack: 'Spuntino' };
     const excludedClass  = meal.excluded ? 'excluded' : '';
     const checkedAttr    = meal.excluded ? '' : 'checked';
+    const disabledAttr   = isConfirmed ? 'disabled' : '';
+
+    let actionsHtml = '';
+    if (!isConfirmed) {
+        actionsHtml = '<div class="meal-actions">'
+            + '<button class="btn-small btn-view-meal" data-date="' + date + '" data-type="' + mealType + '">Ricetta</button>'
+            + '<button class="btn-small btn-swap" data-date="' + date + '" data-type="' + mealType + '">Cambia</button>'
+            + '<button class="btn-small btn-ban" data-date="' + date + '" data-type="' + mealType + '" title="Non propormi più questa ricetta" style="color:#f87171; border-color:rgba(239,68,68,0.2);">🚫</button>'
+            + '</div>';
+    } else {
+        actionsHtml = '<div class="meal-actions">'
+            + '<button class="btn-small btn-view-meal" data-date="' + date + '" data-type="' + mealType + '">Ricetta</button>'
+            + '<span class="confirmed-label">Confermato</span>'
+            + '</div>';
+    }
+
     return '<div class="meal-slot ' + excludedClass + '">'
         + '<div class="meal-type"><span>' + labels[mealType] + '</span><span>' + meal.calories + ' kcal</span></div>'
         + '<div class="meal-name">' + meal.name + '</div>'
         + '<div class="meal-macros"><span>P: ' + meal.macros.protein + 'g</span><span>C: ' + meal.macros.carbs + 'g</span><span>G: ' + meal.macros.fat + 'g</span></div>'
-        + '<div class="meal-toggle"><input type="checkbox" class="exclude-checkbox" data-date="' + date + '" data-type="' + mealType + '" ' + checkedAttr + '><label>Includi Pasto</label></div>'
-        + '<div class="meal-actions">'
-        + '<button class="btn-small btn-view-meal" data-date="' + date + '" data-type="' + mealType + '">Ricetta</button>'
-        + '<button class="btn-small btn-swap" data-date="' + date + '" data-type="' + mealType + '">Cambia</button>'
-        + '<button class="btn-small btn-ban" data-date="' + date + '" data-type="' + mealType + '" title="Non propormi più questa ricetta" style="color:#f87171; border-color:rgba(239,68,68,0.2);">🚫</button>'
-        + '</div>'
+        + '<div class="meal-toggle"><input type="checkbox" class="exclude-checkbox" data-date="' + date + '" data-type="' + mealType + '" ' + checkedAttr + ' ' + disabledAttr + '><label>Includi Pasto</label></div>'
+        + actionsHtml
         + '</div>';
 }
 
@@ -455,8 +474,18 @@ function closeModal() { document.getElementById('meal-modal').classList.add('hid
 
 function swapMeal(date, mealType) {
     const idx     = appState.plan.findIndex(p => p.date === date);
+    if (appState.plan[idx].confirmed) return; // Non cambiare se confermato
+
     const current = appState.plan[idx].meals[mealType];
-    const alt     = findAlternativeMeal(current, appState.user.dislikes, current.calories, appState.user.bannedRecipeIds);
+    
+    // Aggiungiamo l'attuale a quelli da evitare in questa sessione
+    if (!sessionSkippedIds.includes(current.id)) {
+        sessionSkippedIds.push(current.id);
+        // Limitiamo la coda a 15 elementi per non svuotare troppo il pool
+        if (sessionSkippedIds.length > 15) sessionSkippedIds.shift();
+    }
+
+    const alt = findAlternativeMeal(current, appState.user.dislikes, current.calories, appState.user.bannedRecipeIds, sessionSkippedIds);
     if (alt) {
         alt.excluded = false;
         appState.plan[idx].meals[mealType] = Object.assign({}, alt, { mealInstanceId: date + '-' + mealType + '-' + Date.now() });
@@ -464,6 +493,24 @@ function swapMeal(date, mealType) {
         renderDashboard();
     } else {
         alert('Nessuna alternativa trovata nel database.');
+    }
+}
+
+function confirmDay(date) {
+    const idx = appState.plan.findIndex(p => p.date === date);
+    if (idx !== -1) {
+        appState.plan[idx].confirmed = true;
+        debouncedSave();
+        renderDashboard();
+    }
+}
+
+function unlockDay(date) {
+    const idx = appState.plan.findIndex(p => p.date === date);
+    if (idx !== -1) {
+        appState.plan[idx].confirmed = false;
+        debouncedSave();
+        renderDashboard();
     }
 }
 

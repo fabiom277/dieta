@@ -522,6 +522,11 @@ input:focus, select:focus {
     box-shadow: var(--shadow-glow);
 }
 
+.day-card.confirmed {
+    border-color: #4ade80; /* Green border for confirmed */
+    box-shadow: 0 0 15px rgba(74, 222, 128, 0.1);
+}
+
 .day-card.today::before {
     content: "OGGI";
     position: absolute;
@@ -534,6 +539,65 @@ input:focus, select:focus {
     padding: 0.2rem 0.5rem;
     border-radius: 4px;
     z-index: 10;
+}
+
+.day-card.confirmed::after {
+    content: "CONFERMATO";
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    background: #166534;
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    z-index: 10;
+}
+
+.day-footer {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--glass-border);
+    display: flex;
+    justify-content: center;
+}
+
+.btn-confirm-day, .btn-unlock-day {
+    background: rgba(74, 222, 128, 0.1);
+    border: 1px solid #4ade80;
+    color: #4ade80;
+    padding: 0.6rem 1.2rem;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+}
+
+.btn-confirm-day:hover {
+    background: #4ade80;
+    color: #000;
+}
+
+.btn-unlock-day {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--glass-border);
+    color: var(--text-secondary);
+}
+
+.btn-unlock-day:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+}
+
+.confirmed-label {
+    font-size: 0.7rem;
+    color: #4ade80;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-left: 0.5rem;
 }
 
 @media (max-width: 480px) {
