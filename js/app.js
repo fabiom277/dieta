@@ -256,13 +256,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (error) {
                 console.error("NutriPlan: Errore critico in onAuthStateChange:", error);
-                // Se c'è un errore persistente, puliamo e riproviamo
-                if (event === 'SIGNED_IN') {
-                    console.warn("NutriPlan: Tentativo di ripristino sessione...");
-                    await _supabase.auth.signOut();
-                    localStorage.clear();
-                    location.reload();
+                
+                // Mostriamo l'errore in UI invece di ricaricare la pagina all'infinito
+                const errorEl = document.getElementById('auth-error');
+                if (errorEl) {
+                    errorEl.textContent = "Errore durante il caricamento dei dati: " + (error.message || "Errore sconosciuto.");
+                    errorEl.style.display = 'block';
                 }
+                
                 showView('auth');
             }
         } else {
