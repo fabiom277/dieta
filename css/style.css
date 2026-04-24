@@ -606,19 +606,7 @@ input:focus, select:focus {
     box-shadow: 0 0 15px rgba(74, 222, 128, 0.1);
 }
 
-.day-card.today::before {
-    content: "OGGI";
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    background: var(--accent-primary);
-    color: #fff;
-    font-size: 0.65rem;
-    font-weight: 800;
-    padding: 0.2rem 0.5rem;
-    border-radius: 4px;
-    z-index: 10;
-}
+
 
 .day-card.confirmed::after {
     content: "CONFERMATO";
