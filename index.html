@@ -17,6 +17,7 @@
         </div>
         <nav id="main-nav" class="hidden">
             <button id="nav-dashboard" class="active">Piano Settimanale</button>
+            <button id="nav-calendar">Calendario Mensile</button>
             <button id="nav-shopping">Lista della Spesa</button>
             <button id="nav-profile">Il Mio Profilo</button>
             <button id="btn-logout" style="background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #f87171; padding: 0.4rem 0.9rem; border-radius: 8px; font-size: 0.85rem; cursor: pointer;">Esci</button>
@@ -112,21 +113,30 @@
                     <h2>Il tuo Piano Settimanale</h2>
                     <p id="caloric-info">Fabbisogno calcolato: <span class="highlight">-- kcal</span>/giorno</p>
                 </div>
-                <button id="btn-share" class="btn btn-primary" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">📱 Sincronizza Cellulare</button>
             </div>
 
             <div class="calendar-grid" id="calendar-grid">
                 <!-- Days will be injected here -->
             </div>
 
-            <!-- Modal for Meal Details -->
             <div id="meal-modal" class="modal hidden">
-                <div class="modal-content glass-panel">
-                    <button class="close-modal">&times;</button>
+                <div class="modal-content glass-panel" style="margin-top: auto; margin-bottom: auto;">
+                    <button class="close-modal" id="btn-close-modal">&times;</button>
                     <div id="meal-details">
                         <!-- Meal details injected here -->
                     </div>
                 </div>
+            </div>
+        </section>
+
+        <!-- Monthly Calendar View -->
+        <section id="view-calendar" class="view hidden">
+            <div class="dashboard-header">
+                <h2>Calendario Mensile</h2>
+                <p>Storico e programmazione futura</p>
+            </div>
+            <div class="glass-panel" id="monthly-calendar-container" style="padding: 1rem; overflow-x: auto;">
+                <!-- Calendario iniettato qui -->
             </div>
         </section>
 
@@ -153,16 +163,6 @@
             </div>
         </section>
 
-        <!-- QR Code Modal -->
-        <div id="qr-modal" class="modal hidden">
-            <div class="modal-content glass-panel" style="text-align: center;">
-                <button class="close-qr-modal close-modal">&times;</button>
-                <h2>Sincronizza col Cellulare</h2>
-                <p style="margin-bottom: 1.5rem; color: var(--text-muted);">Inquadra questo codice con la fotocamera del tuo telefono per aprire il piano alimentare esatto su quel dispositivo.</p>
-                <div id="qrcode" style="display: flex; justify-content: center; padding: 1rem; background: white; border-radius: 8px; margin: 0 auto; width: max-content;"></div>
-                <p style="margin-top: 1.5rem; font-size: 0.8rem; color: var(--text-muted); word-break: break-all;" id="share-link-text"></p>
-            </div>
-        </div>
 
         <!-- Profile View -->
         <section id="view-profile" class="view hidden">
@@ -177,7 +177,6 @@
         </section>
     </main>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="js/supabase-client.js"></script>
     <script src="js/data.js"></script>
     <script src="js/nutrition.js"></script>

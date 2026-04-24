@@ -138,11 +138,8 @@ function ensurePlanCoversWindow() {
     const today = getTodayISO();
     const windowDays = 7;
     
-    // Rimuovi giorni più vecchi di 3 giorni (teniamo un po' di storico ma non troppo)
-    const threeDaysAgo = new Date(today + 'T00:00:00');
-    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-    const limitDate = threeDaysAgo.toISOString().slice(0, 10);
-    appState.plan = appState.plan.filter(p => p.date >= limitDate);
+    // Non rimuoviamo più i giorni vecchi per permettere lo storico nel calendario mensile
+    // Teniamo tutto lo storico
 
     // Aggiungi giorni mancanti per coprire oggi + 6
     for (let i = 0; i < windowDays; i++) {
@@ -195,6 +192,7 @@ function setupEventListeners() {
     document._listenersSetup = true;
 
     navDashboard.addEventListener('click', () => showView('dashboard'));
+    document.getElementById('nav-calendar').addEventListener('click', () => showView('calendar'));
     navShopping.addEventListener('click',  () => showView('shopping'));
     document.getElementById('nav-profile').addEventListener('click', () => showView('profile'));
 
@@ -205,19 +203,12 @@ function setupEventListeners() {
         // onAuthStateChange will fire and redirect to auth view
     });
 
-    document.querySelector('.close-qr-modal').addEventListener('click', () => {
-        document.getElementById('qr-modal').classList.add('hidden');
-    });
+    document.getElementById('btn-close-modal').addEventListener('click', closeModal);
 
-    // Close modal on background click
     document.getElementById('meal-modal').addEventListener('click', (e) => {
         if (e.target.id === 'meal-modal') closeModal();
     });
-    document.getElementById('qr-modal').addEventListener('click', (e) => {
-        if (e.target.id === 'qr-modal') document.getElementById('qr-modal').classList.add('hidden');
-    });
 
-    document.getElementById('btn-share').addEventListener('click', generateShareLink);
     document.getElementById('generate-shopping').addEventListener('click', generateShoppingList);
 
     document.getElementById('btn-regenerate').addEventListener('click', () => {
@@ -242,13 +233,13 @@ function setupEventListeners() {
 // ============================================================
 
 function showView(viewName) {
-    const allViews = ['view-auth','view-onboarding','view-dashboard','view-shopping','view-profile'];
+    const allViews = ['view-auth','view-onboarding','view-dashboard','view-shopping','view-profile','view-calendar'];
     allViews.forEach(id => {
         const el = document.getElementById(id);
         if (el) { el.classList.remove('active'); el.classList.add('hidden'); }
     });
 
-    const allNavBtns = [navDashboard, navShopping, document.getElementById('nav-profile')];
+    const allNavBtns = [navDashboard, navShopping, document.getElementById('nav-profile'), document.getElementById('nav-calendar')];
     allNavBtns.forEach(b => { if (b) b.classList.remove('active'); });
 
     if (viewName === 'auth') {
@@ -274,6 +265,14 @@ function showView(viewName) {
         navShopping.classList.add('active');
         mainNav.classList.remove('hidden');
         renderShoppingSelector();
+
+    } else if (viewName === 'calendar') {
+        const vc = document.getElementById('view-calendar');
+        vc.classList.remove('hidden');
+        vc.classList.add('active');
+        document.getElementById('nav-calendar').classList.add('active');
+        mainNav.classList.remove('hidden');
+        renderMonthlyCalendar();
 
     } else if (viewName === 'profile') {
         const pv = document.getElementById('view-profile');
@@ -697,39 +696,69 @@ function generateShoppingList() {
 }
 
 // ============================================================
-// QR CODE / SHARE
+// MONTHLY CALENDAR
 // ============================================================
 
-function generateShareLink() {
-    const compressedPlan = appState.plan.map(day => {
-        const d = { day: day.day, b: day.meals.breakfast.id, l: day.meals.lunch.id };
-        if (day.meals.snack) d.s = day.meals.snack.id;
-        return d;
-    });
-    const base64Str = btoa(JSON.stringify({ user: appState.user, planIds: compressedPlan }));
-    const shareUrl  = window.location.href.split('?')[0] + '?p=' + base64Str;
+function renderMonthlyCalendar() {
+    const container = document.getElementById('monthly-calendar-container');
+    if (!container) return;
 
-    document.getElementById('qrcode').innerHTML = '';
-    new QRCode(document.getElementById('qrcode'), {
-        text: shareUrl, width: 200, height: 200,
-        colorDark: '#0f172a', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.L
-    });
-    document.getElementById('share-link-text').textContent = shareUrl;
-    document.getElementById('qr-modal').classList.remove('hidden');
-}
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear  = now.getFullYear();
 
-function hydratePlanFromIds(planIds) {
-    return planIds.map(day => {
-        const breakfast = recipesDB.find(r => r.id === day.b);
-        const lunch     = recipesDB.find(r => r.id === day.l);
-        const meals = {
-            breakfast: Object.assign({}, breakfast, { mealInstanceId: 'd' + day.day + '-b', excluded: false }),
-            lunch:     Object.assign({}, lunch,     { mealInstanceId: 'd' + day.day + '-l', excluded: false })
-        };
-        if (day.s) {
-            const snack = snacksDB.find(r => r.id === day.s);
-            meals.snack = Object.assign({}, snack, { mealInstanceId: 'd' + day.day + '-s', excluded: false });
+    const monthNames = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+    
+    // Header con mese
+    let html = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+        <h3>${monthNames[currentMonth]} ${currentYear}</h3>
+    </div>`;
+
+    // Griglia giorni
+    html += `<div style="display:grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background:var(--glass-border); border:1px solid var(--glass-border); border-radius:8px; overflow:hidden;">`;
+    
+    // Header giorni settimana
+    const weekDays = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+    weekDays.forEach(wd => {
+        html += `<div style="background:rgba(0,0,0,0.3); padding:0.5rem; text-align:center; font-size:0.75rem; font-weight:700; color:var(--text-secondary);">${wd}</div>`;
+    });
+
+    const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); // 0 is Sunday
+    const emptySlots = (firstDayOfMonth === 0 ? 7 : firstDayOfMonth) - 1; // Adjust to Monday start
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+    // Slot vuoti inizio mese
+    for (let i = 0; i < emptySlots; i++) {
+        html += `<div style="background:rgba(255,255,255,0.02); min-height:80px;"></div>`;
+    }
+
+    const todayStr = getTodayISO();
+
+    // Giorni del mese
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const dayPlan = appState.plan.find(p => p.date === dateStr);
+        const isToday = dateStr === todayStr;
+        
+        let dayStyle = `background:rgba(0,0,0,0.2); min-height:100px; padding:0.5rem; display:flex; flex-direction:column; gap:0.25rem; border: 1px solid transparent;`;
+        if (isToday) dayStyle += `border-color:var(--accent-primary); background:rgba(16, 185, 129, 0.05);`;
+
+        html += `<div style="${dayStyle}">
+            <div style="font-size:0.7rem; font-weight:700; color:${isToday ? 'var(--accent-primary)' : 'var(--text-secondary)'}; margin-bottom:0.25rem;">${day}</div>`;
+        
+        if (dayPlan) {
+            html += `<div style="font-size:0.6rem; background:rgba(16, 185, 129, 0.1); color:#4ade80; padding:2px 4px; border-radius:4px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer;" onclick="openMealDetails('${dateStr}', 'breakfast')">☕ ${dayPlan.meals.breakfast.name}</div>`;
+            html += `<div style="font-size:0.6rem; background:rgba(59, 130, 246, 0.1); color:#60a5fa; padding:2px 4px; border-radius:4px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer;" onclick="openMealDetails('${dateStr}', 'lunch')">🍝 ${dayPlan.meals.lunch.name}</div>`;
+            if (dayPlan.confirmed) {
+                html += `<div style="font-size:0.5rem; text-align:right; color:#4ade80; margin-top:auto;">✅</div>`;
+            }
         }
-        return { day: day.day, meals };
-    });
+        
+        html += `</div>`;
+    }
+
+    html += `</div>`;
+    container.innerHTML = html;
 }
+
+// Rimozione funzioni QR obsolete
