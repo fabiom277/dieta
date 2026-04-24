@@ -110,6 +110,31 @@ async function loadFromCloud() {
     if (!appState.user.bannedRecipeIds) appState.user.bannedRecipeIds = [];
     appState.plan = data.meal_plan || [];
 
+    // --- SINCRONIZZAZIONE RICETTE ---
+    // Poiché il database locale è stato ripristinato, aggiorniamo le ricette nel piano salvato
+    // se troviamo una corrispondenza per ID, così da recuperare le istruzioni complete.
+    if (appState.plan.length > 0) {
+        appState.plan.forEach(day => {
+            ['breakfast', 'snack', 'lunch'].forEach(slot => {
+                if (day.meals[slot]) {
+                    const currentMeal = day.meals[slot];
+                    // Cerca nel DB locale
+                    let updated = recipesDB.find(r => r.id === currentMeal.id) || snacksDB.find(r => r.id === currentMeal.id);
+                    if (updated) {
+                        // Mantieni l'esclusione e l'instanceId, ma aggiorna il resto
+                        const isExcluded = currentMeal.excluded;
+                        const instanceId = currentMeal.mealInstanceId;
+                        const isConfirmed = day.confirmed; // Non perdiamo lo stato del giorno
+                        day.meals[slot] = JSON.parse(JSON.stringify(updated));
+                        day.meals[slot].excluded = isExcluded;
+                        day.meals[slot].mealInstanceId = instanceId;
+                        day.meals[slot].calories = updated.baseCalories;
+                    }
+                }
+            });
+        });
+    }
+
     // Migrazione: se il piano è nel vecchio formato (usando 'day' invece di 'date')
     if (appState.plan.length > 0 && appState.plan[0].day !== undefined) {
         const today = getTodayISO();
@@ -169,13 +194,22 @@ document.addEventListener('DOMContentLoaded', () => {
     _supabase.auth.onAuthStateChange(async (event, session) => {
         console.log("NutriPlan: Auth State Change", event, session ? "Sessione attiva" : "Nessuna sessione");
         if (session && session.user) {
-            currentUser = session.user;
-            const hasData = await loadFromCloud();
-            setupEventListeners();
-            if (hasData) {
-                showView('dashboard');
-            } else {
-                showView('onboarding');
+            try {
+                currentUser = session.user;
+                const hasData = await loadFromCloud();
+                setupEventListeners();
+                if (hasData) {
+                    showView('dashboard');
+                } else {
+                    showView('onboarding');
+                }
+                console.log("NutriPlan v2.1: App Inizializzata e Ricette Sincronizzate.");
+            } catch (error) {
+                console.error("Errore inizializzazione:", error);
+                currentUser = null;
+                appState = { user: null, plan: [] };
+                setupEventListeners();
+                showView('auth');
             }
         } else {
             currentUser = null;
