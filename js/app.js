@@ -98,61 +98,81 @@ function debouncedSave() {
 
 async function loadFromCloud() {
     if (!currentUser) return false;
-    const { data, error } = await _supabase
-        .from('user_data')
-        .select('nutrition_profile, meal_plan')
-        .eq('id', currentUser.id)
-        .single();
+    console.log("NutriPlan: Caricamento dati da Cloud per UID:", currentUser.id);
+    
+    try {
+        const { data, error } = await _supabase
+            .from('user_data')
+            .select('nutrition_profile, meal_plan')
+            .eq('id', currentUser.id)
+            .single();
 
-    if (error || !data || !data.nutrition_profile) return false;
+        if (error) {
+            if (error.code === 'PGRST116') {
+                console.log("NutriPlan: Nessun dato trovato per l'utente, avvio onboarding.");
+                return false;
+            }
+            throw error;
+        }
 
-    appState.user = data.nutrition_profile;
-    if (!appState.user.bannedRecipeIds) appState.user.bannedRecipeIds = [];
-    appState.plan = data.meal_plan || [];
+        if (!data || !data.nutrition_profile) {
+            console.log("NutriPlan: Profilo mancante, avvio onboarding.");
+            return false;
+        }
 
-    // --- SINCRONIZZAZIONE RICETTE ---
-    // Poiché il database locale è stato ripristinato, aggiorniamo le ricette nel piano salvato
-    // se troviamo una corrispondenza per ID, così da recuperare le istruzioni complete.
-    if (appState.plan.length > 0) {
-        appState.plan.forEach(day => {
-            ['breakfast', 'snack', 'lunch'].forEach(slot => {
-                if (day.meals[slot]) {
-                    const currentMeal = day.meals[slot];
-                    // Cerca nel DB locale
-                    let updated = recipesDB.find(r => r.id === currentMeal.id) || snacksDB.find(r => r.id === currentMeal.id);
-                    if (updated) {
-                        // Mantieni l'esclusione e l'instanceId, ma aggiorna il resto
-                        const isExcluded = currentMeal.excluded;
-                        const instanceId = currentMeal.mealInstanceId;
-                        const isConfirmed = day.confirmed; // Non perdiamo lo stato del giorno
-                        day.meals[slot] = JSON.parse(JSON.stringify(updated));
-                        day.meals[slot].excluded = isExcluded;
-                        day.meals[slot].mealInstanceId = instanceId;
-                        day.meals[slot].calories = updated.baseCalories;
-                    }
+        appState.user = data.nutrition_profile;
+        if (!appState.user.bannedRecipeIds) appState.user.bannedRecipeIds = [];
+        appState.plan = data.meal_plan || [];
+
+        console.log("NutriPlan: Dati caricati. Giorni nel piano:", appState.plan.length);
+
+        // --- SINCRONIZZAZIONE RICETTE ---
+        if (appState.plan.length > 0) {
+            appState.plan.forEach(day => {
+                if (day && day.meals) {
+                    ['breakfast', 'snack', 'lunch'].forEach(slot => {
+                        if (day.meals[slot]) {
+                            const currentMeal = day.meals[slot];
+                            // Cerca nel DB locale (gestisce snacksDB se separato)
+                            let updated = recipesDB.find(r => r.id === currentMeal.id) || 
+                                          (typeof snacksDB !== 'undefined' ? snacksDB.find(r => r.id === currentMeal.id) : null);
+                            
+                            if (updated) {
+                                const isExcluded = currentMeal.excluded;
+                                const instanceId = currentMeal.mealInstanceId;
+                                day.meals[slot] = JSON.parse(JSON.stringify(updated));
+                                day.meals[slot].excluded = isExcluded;
+                                day.meals[slot].mealInstanceId = instanceId;
+                                day.meals[slot].calories = updated.baseCalories;
+                            }
+                        }
+                    });
                 }
             });
-        });
-    }
+        }
 
-    // Migrazione: se il piano è nel vecchio formato (usando 'day' invece di 'date')
-    if (appState.plan.length > 0 && appState.plan[0].day !== undefined) {
-        const today = getTodayISO();
-        appState.plan = appState.plan.map((p, idx) => {
-            const d = new Date(today + 'T00:00:00');
-            d.setDate(d.getDate() + idx);
-            const dateStr = d.toISOString().slice(0, 10);
-            const newP = { date: dateStr, meals: p.meals };
-            // Update instance IDs
-            ['breakfast', 'snack', 'lunch'].forEach(t => {
-                if (newP.meals[t]) newP.meals[t].mealInstanceId = `${dateStr}-${t}`;
+        // Migrazione formati vecchi
+        if (appState.plan.length > 0 && appState.plan[0].day !== undefined) {
+            console.log("NutriPlan: Eseguo migrazione formato piano...");
+            const today = getTodayISO();
+            appState.plan = appState.plan.map((p, idx) => {
+                const d = new Date(today + 'T00:00:00');
+                d.setDate(d.getDate() + idx);
+                const dateStr = d.toISOString().slice(0, 10);
+                const newP = { date: dateStr, meals: p.meals };
+                ['breakfast', 'snack', 'lunch'].forEach(t => {
+                    if (newP.meals[t]) newP.meals[t].mealInstanceId = `${dateStr}-${t}`;
+                });
+                return newP;
             });
-            return newP;
-        });
-    }
+        }
 
-    ensurePlanCoversWindow();
-    return true;
+        ensurePlanCoversWindow();
+        return true;
+    } catch (err) {
+        console.error("NutriPlan: Errore durante loadFromCloud:", err);
+        return false;
+    }
 }
 
 function ensurePlanCoversWindow() {
@@ -160,10 +180,7 @@ function ensurePlanCoversWindow() {
     const today = getTodayISO();
     const windowDays = 7;
     
-    // Non rimuoviamo più i giorni vecchi per permettere lo storico nel calendario mensile
-    // Teniamo tutto lo storico
-
-    // Aggiungi giorni mancanti per coprire oggi + 6
+    let added = 0;
     for (let i = 0; i < windowDays; i++) {
         const d = new Date(today + 'T00:00:00');
         d.setDate(d.getDate() + i);
@@ -172,15 +189,18 @@ function ensurePlanCoversWindow() {
         if (!appState.plan.find(p => p.date === dateStr)) {
             const newDay = generateSingleDay(appState.user.targetCalories, appState.user.dislikes, appState.user.bannedRecipeIds);
             newDay.date = dateStr;
-            // Set instance IDs
             ['breakfast', 'snack', 'lunch'].forEach(t => {
                 if (newDay.meals[t]) newDay.meals[t].mealInstanceId = `${dateStr}-${t}`;
             });
             appState.plan.push(newDay);
+            added++;
         }
     }
-    // Ordina per data
-    appState.plan.sort((a, b) => a.date.localeCompare(b.date));
+    if (added > 0) {
+        console.log(`NutriPlan: Aggiunti ${added} nuovi giorni al piano.`);
+        appState.plan.sort((a, b) => a.date.localeCompare(b.date));
+        debouncedSave();
+    }
 }
 
 // ============================================================
@@ -188,35 +208,42 @@ function ensurePlanCoversWindow() {
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("NutriPlan: App Inizializzata");
+    console.log("NutriPlan: App Inizializzata (DOM Ready)");
     
-    // Listen to auth state changes (login, logout, page load)
     _supabase.auth.onAuthStateChange(async (event, session) => {
-        console.log("NutriPlan: Auth State Change", event, session ? "Sessione attiva" : "Nessuna sessione");
+        console.log("NutriPlan: Auth Event ->", event);
+        
         if (session && session.user) {
+            console.log("NutriPlan: Sessione attiva per", session.user.email);
             try {
                 currentUser = session.user;
                 const hasData = await loadFromCloud();
+                
+                // Assicura che i listener siano pronti
                 setupEventListeners();
+                
                 if (hasData) {
+                    console.log("NutriPlan: Dati trovati, mostro Dashboard.");
                     showView('dashboard');
                 } else {
+                    console.log("NutriPlan: Dati non trovati, mostro Onboarding.");
                     showView('onboarding');
                 }
-                console.log("NutriPlan v2.1: App Inizializzata e Ricette Sincronizzate.");
             } catch (error) {
-                console.error("Errore inizializzazione:", error);
-                currentUser = null;
-                appState = { user: null, plan: [] };
-                setupEventListeners();
+                console.error("NutriPlan: Errore critico in onAuthStateChange:", error);
                 showView('auth');
             }
         } else {
+            console.log("NutriPlan: Nessuna sessione, mostro Auth.");
             currentUser = null;
             appState = { user: null, plan: [] };
             setupEventListeners();
             showView('auth');
         }
+        
+        // Rimuove loader globale se presente
+        const loader = document.getElementById('global-loader');
+        if (loader) loader.style.display = 'none';
     });
 
     const onboardingForm = document.getElementById('onboarding-form');
@@ -353,78 +380,91 @@ function handleOnboardingSubmit(e) {
 
 function renderDashboard() {
     if (!appState.user) return;
-    ensurePlanCoversWindow(); // Assicura che oggi sia coperto
+    try {
+        ensurePlanCoversWindow(); // Assicura che oggi sia coperto
 
-    document.getElementById('caloric-info').innerHTML =
-        'Fabbisogno calcolato: <span class="highlight">' + appState.user.targetCalories + ' kcal</span>/giorno';
+        document.getElementById('caloric-info').innerHTML =
+            'Fabbisogno calcolato: <span class="highlight">' + appState.user.targetCalories + ' kcal</span>/giorno';
 
-    const grid = document.getElementById('calendar-grid');
-    grid.innerHTML = '';
+        const grid = document.getElementById('calendar-grid');
+        if (!grid) return;
+        grid.innerHTML = '';
 
-    const today = getTodayISO();
-    const visiblePlan = appState.plan.filter(p => p.date >= today).slice(0, 7);
+        const today = getTodayISO();
+        const visiblePlan = appState.plan.filter(p => p.date >= today).slice(0, 7);
 
-    visiblePlan.forEach(dayPlan => {
-        let totalCals = 0;
-        if (!dayPlan.meals.breakfast.excluded) totalCals += dayPlan.meals.breakfast.calories;
-        if (!dayPlan.meals.lunch.excluded)     totalCals += dayPlan.meals.lunch.calories;
-        if (dayPlan.meals.snack && !dayPlan.meals.snack.excluded) totalCals += dayPlan.meals.snack.calories;
+        if (visiblePlan.length === 0) {
+            grid.innerHTML = '<p class="text-center text-muted" style="grid-column: 1/-1;">Nessun piano generato. Prova a rigenerare dal profilo.</p>';
+            return;
+        }
 
-        const card = document.createElement('div');
-        card.className = 'day-card';
-        if (dayPlan.date === today) card.classList.add('today');
-        if (dayPlan.confirmed) card.classList.add('confirmed');
+        visiblePlan.forEach(dayPlan => {
+            let totalCals = 0;
+            if (dayPlan.meals.breakfast && !dayPlan.meals.breakfast.excluded) totalCals += dayPlan.meals.breakfast.calories;
+            if (dayPlan.meals.lunch && !dayPlan.meals.lunch.excluded)     totalCals += dayPlan.meals.lunch.calories;
+            if (dayPlan.meals.snack && !dayPlan.meals.snack.excluded) totalCals += dayPlan.meals.snack.calories;
 
-        const dateObj = new Date(dayPlan.date + 'T00:00:00');
-        const options = { weekday: 'long', day: 'numeric', month: 'short' };
-        const dateStr = dateObj.toLocaleDateString('it-IT', options);
+            const card = document.createElement('div');
+            card.className = 'day-card';
+            if (dayPlan.date === today) card.classList.add('today');
+            if (dayPlan.confirmed) card.classList.add('confirmed');
 
-        let mealsHtml = renderMealSlot(dayPlan.date, 'breakfast', dayPlan.meals.breakfast, dayPlan.confirmed);
-        if (dayPlan.meals.snack) mealsHtml += renderMealSlot(dayPlan.date, 'snack', dayPlan.meals.snack, dayPlan.confirmed);
-        mealsHtml += renderMealSlot(dayPlan.date, 'lunch', dayPlan.meals.lunch, dayPlan.confirmed);
+            const dateObj = new Date(dayPlan.date + 'T00:00:00');
+            const options = { weekday: 'long', day: 'numeric', month: 'short' };
+            const dateStr = dateObj.toLocaleDateString('it-IT', options);
 
-        const confirmBtn = dayPlan.confirmed 
-            ? `<button class="btn-unlock-day" onclick="unlockDay('${dayPlan.date}')">🔓 Sblocca Giorno</button>`
-            : `<button class="btn-confirm-day" onclick="confirmDay('${dayPlan.date}')">✅ Conferma Giorno</button>`;
+            let mealsHtml = '';
+            if (dayPlan.meals.breakfast) mealsHtml += renderMealSlot(dayPlan.date, 'breakfast', dayPlan.meals.breakfast, dayPlan.confirmed);
+            if (dayPlan.meals.snack)     mealsHtml += renderMealSlot(dayPlan.date, 'snack', dayPlan.meals.snack, dayPlan.confirmed);
+            if (dayPlan.meals.lunch)     mealsHtml += renderMealSlot(dayPlan.date, 'lunch', dayPlan.meals.lunch, dayPlan.confirmed);
 
-        card.innerHTML = '<div class="day-header"><h3>' + dateStr.charAt(0).toUpperCase() + dateStr.slice(1) + '</h3>'
-            + '<span class="day-kcal">' + totalCals + ' kcal</span></div>'
-            + mealsHtml
-            + `<div class="day-footer">${confirmBtn}</div>`;
-        grid.appendChild(card);
-    });
+            const confirmBtn = dayPlan.confirmed 
+                ? `<button class="btn-unlock-day" onclick="unlockDay('${dayPlan.date}')">🔓 Sblocca Giorno</button>`
+                : `<button class="btn-confirm-day" onclick="confirmDay('${dayPlan.date}')">✅ Conferma Giorno</button>`;
 
-    document.querySelectorAll('.btn-view-meal').forEach(btn => {
-        btn.addEventListener('click', e => {
-            openMealDetails(e.target.dataset.date, e.target.dataset.type);
+            card.innerHTML = '<div class="day-header"><h3>' + dateStr.charAt(0).toUpperCase() + dateStr.slice(1) + '</h3>'
+                + '<span class="day-kcal">' + totalCals + ' kcal</span></div>'
+                + mealsHtml
+                + `<div class="day-footer">${confirmBtn}</div>`;
+            grid.appendChild(card);
         });
+
+        // Event listeners for buttons in cards
+        setupDashboardInteractions();
+    } catch (err) {
+        console.error("NutriPlan: Errore durante renderDashboard:", err);
+    }
+}
+
+function setupDashboardInteractions() {
+    document.querySelectorAll('.btn-view-meal').forEach(btn => {
+        btn.onclick = (e) => openMealDetails(e.target.dataset.date, e.target.dataset.type);
     });
 
     document.querySelectorAll('.btn-swap').forEach(btn => {
-        btn.addEventListener('click', e => {
-            swapMeal(e.target.dataset.date, e.target.dataset.type);
-        });
+        btn.onclick = (e) => swapMeal(e.target.dataset.date, e.target.dataset.type);
     });
 
     document.querySelectorAll('.btn-ban').forEach(btn => {
-        btn.addEventListener('click', e => {
-            banRecipe(e.target.dataset.date, e.target.dataset.type);
-        });
+        btn.onclick = (e) => banRecipe(e.target.dataset.date, e.target.dataset.type);
     });
 
     document.querySelectorAll('.exclude-checkbox').forEach(cb => {
-        cb.addEventListener('change', e => {
+        cb.onchange = (e) => {
             const date = e.target.dataset.date;
             const type = e.target.dataset.type;
             const idx  = appState.plan.findIndex(p => p.date === date);
-            appState.plan[idx].meals[type].excluded = !e.target.checked;
-            debouncedSave();
-            renderDashboard();
-        });
+            if (idx !== -1) {
+                appState.plan[idx].meals[type].excluded = !e.target.checked;
+                debouncedSave();
+                renderDashboard();
+            }
+        };
     });
 }
 
 function renderMealSlot(date, mealType, meal, isConfirmed) {
+    if (!meal) return '';
     const labels = { breakfast: 'Colazione', lunch: 'Pranzo', snack: 'Spuntino' };
     const excludedClass  = meal.excluded ? 'excluded' : '';
     const checkedAttr    = meal.excluded ? '' : 'checked';
@@ -445,9 +485,9 @@ function renderMealSlot(date, mealType, meal, isConfirmed) {
     }
 
     return '<div class="meal-slot ' + excludedClass + '">'
-        + '<div class="meal-type"><span>' + labels[mealType] + '</span><span>' + meal.calories + ' kcal</span></div>'
-        + '<div class="meal-name">' + meal.name + '</div>'
-        + '<div class="meal-macros"><span>P: ' + meal.macros.protein + 'g</span><span>C: ' + meal.macros.carbs + 'g</span><span>G: ' + meal.macros.fat + 'g</span></div>'
+        + '<div class="meal-type"><span>' + labels[mealType] + '</span><span>' + (meal.calories || 0) + ' kcal</span></div>'
+        + '<div class="meal-name">' + (meal.name || 'Pasto') + '</div>'
+        + '<div class="meal-macros"><span>P: ' + (meal.macros?.protein || 0) + 'g</span><span>C: ' + (meal.macros?.carbs || 0) + 'g</span><span>G: ' + (meal.macros?.fat || 0) + 'g</span></div>'
         + '<div class="meal-toggle"><input type="checkbox" class="exclude-checkbox" data-date="' + date + '" data-type="' + mealType + '" ' + checkedAttr + ' ' + disabledAttr + '><label>Includi Pasto</label></div>'
         + actionsHtml
         + '</div>';

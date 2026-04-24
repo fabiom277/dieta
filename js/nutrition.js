@@ -59,12 +59,20 @@ function getSafeRecipes(dislikesStr, pool, bannedRecipeIds) {
 
     if (!dislikesStr || dislikesStr.trim() === '') return filtered;
 
-    const rawDislikes = dislikesStr.toLowerCase().split(',').map(d => d.trim()).filter(d => d.length > 0);
+    const rawDislikes = dislikesStr.toLowerCase()
+        .replace(/\b(e|ed)\b/g, ',') // Sostituisce " e " o " ed " con virgole
+        .split(/[,\n]/)
+        .map(d => d.trim())
+        .filter(d => d.length > 0);
+    
     const expandedDislikes = new Set(rawDislikes);
     rawDislikes.forEach(d => {
-        if (FOOD_CATEGORY_MAP[d]) {
-            FOOD_CATEGORY_MAP[d].forEach(synonym => expandedDislikes.add(synonym));
-        }
+        // Cerca corrispondenze parziali nelle chiavi del MAP (es. "crostacei" se l'utente scrive "i crostacei")
+        Object.keys(FOOD_CATEGORY_MAP).forEach(cat => {
+            if (d.includes(cat) || cat.includes(d)) {
+                FOOD_CATEGORY_MAP[cat].forEach(synonym => expandedDislikes.add(synonym));
+            }
+        });
     });
     const dislikes = Array.from(expandedDislikes);
 
