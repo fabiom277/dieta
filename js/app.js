@@ -481,8 +481,8 @@ function openMealDetails(date, mealType) {
         </div>`;
 
     if (meal.sourceUrl && meal.sourceUrl.length > 30) {
-        html += `<div style="margin-top:2rem; padding:1.5rem; background:rgba(255,255,255,0.03); border-radius:12px; text-align:center;">
-            <a href="${meal.sourceUrl}" target="_blank" style="color:var(--accent-primary); text-decoration:none; font-weight:700; display:flex; align-items:center; justify-content:center; gap:0.5rem;">
+        html += `<div class="recipe-source-container">
+            <a href="${meal.sourceUrl}" target="_blank" class="recipe-source-link">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                 Ricetta Originale
             </a>
@@ -493,11 +493,17 @@ function openMealDetails(date, mealType) {
 
     document.getElementById('meal-details').innerHTML = html;
     document.getElementById('meal-modal').classList.remove('hidden');
+    // Blocco scroll body
+    document.body.style.overflow = 'hidden';
     // Ensure modal scroll is at top
     document.querySelector('#meal-modal .modal-content').scrollTop = 0;
 }
 
-function closeModal() { document.getElementById('meal-modal').classList.add('hidden'); }
+function closeModal() { 
+    document.getElementById('meal-modal').classList.add('hidden'); 
+    // Ripristino scroll body
+    document.body.style.overflow = '';
+}
 
 // ============================================================
 // SWAP MEAL
@@ -747,7 +753,7 @@ function renderMonthlyCalendar() {
     </div>`;
 
     // Griglia giorni
-    html += `<div class="calendar-month-grid" style="display:grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background:var(--glass-border); border:1px solid var(--glass-border); border-radius:8px; overflow:hidden;">`;
+    html += `<div class="calendar-month-grid">`;
     
     // Header giorni settimana
     const weekDays = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
