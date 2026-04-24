@@ -234,6 +234,17 @@ document.addEventListener('DOMContentLoaded', () => {
         sessionStorage.setItem('nutriplan_init_check', 'true');
     }
 
+    // Fallback di sicurezza: rimuove SEMPRE il loader globale dopo 4 secondi.
+    // Previene il blocco su "Sincronizzazione in corso..." se F5 causa un hang di Supabase.
+    setTimeout(() => {
+        const loader = document.getElementById('global-loader');
+        if (loader && loader.style.display !== 'none') {
+            console.warn("NutriPlan: Timeout globale di sicurezza raggiunto. Nascondo loader.");
+            loader.style.opacity = '0';
+            setTimeout(() => loader.style.display = 'none', 500);
+        }
+    }, 4000);
+
     _supabase.auth.onAuthStateChange(async (event, session) => {
         console.log("NutriPlan: Auth Event ->", event);
         

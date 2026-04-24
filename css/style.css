@@ -709,6 +709,8 @@ input:focus, select:focus {
     gap: 0.4rem; 
     border: 1px solid transparent;
     transition: all 0.2s ease;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .calendar-day-cell.is-today {
