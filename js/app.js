@@ -431,31 +431,65 @@ function openMealDetails(date, mealType) {
     const dateObj = new Date(date + 'T00:00:00');
     const dateStr = dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' });
 
-    let html = '<div class="meal-type">' + labels[mealType] + ' - ' + dateStr + '</div>'
-        + '<h2>' + meal.name + '</h2>';
-
+    let html = '';
+    
+    // Header Image (if available)
     if (meal.imageUrl) {
-        html += '<div style="margin:1rem 0;border-radius:12px;overflow:hidden;height:200px;">'
-            + '<img src="' + meal.imageUrl + '" alt="' + meal.name + '" style="width:100%;height:100%;object-fit:cover;"></div>';
+        html += `<img src="${meal.imageUrl}" class="recipe-header-img" alt="${meal.name}">`;
     }
 
-    html += '<div class="meal-macros" style="margin-bottom:1.5rem;font-size:0.9rem;">'
-        + '<span><strong>' + meal.calories + ' kcal</strong></span>'
-        + '<span>P: ' + meal.macros.protein + 'g</span>'
-        + '<span>C: ' + meal.macros.carbs + 'g</span>'
-        + '<span>G: ' + meal.macros.fat + 'g</span></div>'
-        + '<div class="recipe-prep"><h4>Ingredienti</h4><ul>'
-        + meal.ingredients.map(i => '<li>' + i.amount + i.unit + ' ' + i.name + '</li>').join('')
-        + '</ul></div>'
-        + '<div class="recipe-prep"><h4>Preparazione</h4><ol>'
-        + meal.instructions.map(s => '<li>' + s + '</li>').join('')
-        + '</ol></div>';
+    html += `<div class="recipe-body">
+        <div class="meal-type" style="color:var(--accent-primary); font-weight:700; margin-bottom:0.5rem;">${labels[mealType].toUpperCase()}</div>
+        <h2 style="font-size:1.8rem; margin-bottom:1.5rem;">${meal.name}</h2>
+        
+        <div class="recipe-meta">
+            <div class="meta-item">
+                <span class="label">Energia</span>
+                <span class="value">${meal.calories} kcal</span>
+            </div>
+            <div class="meta-item">
+                <span class="label">Proteine</span>
+                <span class="value">${meal.macros.protein}g</span>
+            </div>
+            <div class="meta-item">
+                <span class="label">Carboidrati</span>
+                <span class="value">${meal.macros.carbs}g</span>
+            </div>
+            <div class="meta-item">
+                <span class="label">Grassi</span>
+                <span class="value">${meal.macros.fat}g</span>
+            </div>
+        </div>
 
-    // Link fix: show only if it looks like a real recipe link (contains more than just the domain)
+        <div class="recipe-section">
+            <h4><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Ingredienti</h4>
+            <div style="display:grid; gap:0.5rem;">
+                ${meal.ingredients.map(i => `
+                    <div class="ingredient-check-item">
+                        <span style="font-weight:600; color:var(--accent-primary); min-width:60px;">${i.amount}${i.unit}</span>
+                        <span>${i.name}</span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+
+        <div class="recipe-section">
+            <h4><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> Preparazione</h4>
+            <ol style="line-height:1.8;">
+                ${meal.instructions.map(s => `<li>${s}</li>`).join('')}
+            </ol>
+        </div>`;
+
     if (meal.sourceUrl && meal.sourceUrl.length > 30) {
-        html += '<div style="margin-top:2rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.1);">'
-            + '<a href="' + meal.sourceUrl + '" target="_blank" style="color:var(--accent-primary);text-decoration:none;font-weight:600;">🔗 Vai alla Ricetta Originale</a></div>';
+        html += `<div style="margin-top:2rem; padding:1.5rem; background:rgba(255,255,255,0.03); border-radius:12px; text-align:center;">
+            <a href="${meal.sourceUrl}" target="_blank" style="color:var(--accent-primary); text-decoration:none; font-weight:700; display:flex; align-items:center; justify-content:center; gap:0.5rem;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                Ricetta Originale
+            </a>
+        </div>`;
     }
+    
+    html += `</div>`; // Close recipe-body
 
     document.getElementById('meal-details').innerHTML = html;
     document.getElementById('meal-modal').classList.remove('hidden');
@@ -713,7 +747,7 @@ function renderMonthlyCalendar() {
     </div>`;
 
     // Griglia giorni
-    html += `<div style="display:grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background:var(--glass-border); border:1px solid var(--glass-border); border-radius:8px; overflow:hidden;">`;
+    html += `<div class="calendar-month-grid" style="display:grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background:var(--glass-border); border:1px solid var(--glass-border); border-radius:8px; overflow:hidden;">`;
     
     // Header giorni settimana
     const weekDays = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];

@@ -335,16 +335,16 @@ input:focus, select:focus {
     background: rgba(59, 130, 246, 0.1);
 }
 
-/* Modal */
+/* --- Modern Recipe Drawer (instead of modal) --- */
 .modal {
     position: fixed;
     top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.6);
-    backdrop-filter: blur(5px);
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     z-index: 1000;
     display: flex;
-    justify-content: center;
-    align-items: center;
+    justify-content: flex-end; /* Drawer on the right */
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s ease;
@@ -356,40 +356,119 @@ input:focus, select:focus {
 }
 
 .modal-content {
-    width: 95%;
-    max-width: 650px;
-    max-height: 85vh;
+    width: 100%;
+    max-width: 500px; /* Drawer width */
+    height: 100vh;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--glass-border);
+    box-shadow: -10px 0 30px rgba(0,0,0,0.5);
     overflow-y: auto;
     position: relative;
-    transform: translateY(20px);
-    transition: transform 0.3s ease, opacity 0.3s ease;
-    margin: auto; /* Centra orizzontalmente e verticalmente nel flex container */
+    transform: translateX(100%); /* Start off-screen */
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+    padding: 0; /* Full bleed image support */
 }
 
 .modal:not(.hidden) .modal-content {
-    transform: translateY(0);
+    transform: translateX(0);
 }
 
 .close-modal {
     position: absolute;
-    top: 1rem;
-    right: 1rem;
-    background: none;
-    border: none;
-    color: var(--text-secondary);
+    top: 1.25rem;
+    right: 1.25rem;
+    background: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(4px);
+    border: 1px solid var(--glass-border);
+    color: #fff;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 1.5rem;
     cursor: pointer;
+    z-index: 10;
+    transition: var(--transition-fast);
 }
 
-.close-modal:hover { color: #fff; }
-
-.recipe-prep {
-    margin-top: 1.5rem;
+.close-modal:hover { 
+    background: rgba(239, 68, 68, 0.8);
+    transform: rotate(90deg);
 }
 
-.recipe-prep h4 { color: var(--accent-primary); margin-bottom: 0.5rem; }
-.recipe-prep ol { padding-left: 1.5rem; color: var(--text-secondary); }
-.recipe-prep li { margin-bottom: 0.5rem; }
+.recipe-header-img {
+    width: 100%;
+    height: 300px;
+    object-fit: cover;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.recipe-body {
+    padding: 2rem;
+}
+
+.recipe-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.meta-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.meta-item .label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+}
+
+.meta-item .value {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--accent-primary);
+}
+
+.recipe-section {
+    margin-bottom: 2.5rem;
+}
+
+.recipe-section h4 {
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.recipe-section ul, .recipe-section ol {
+    color: var(--text-primary);
+    padding-left: 1.2rem;
+}
+
+.recipe-section li {
+    margin-bottom: 0.75rem;
+}
+
+.ingredient-check-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.6rem;
+    background: rgba(255,255,255,0.03);
+    padding: 0.6rem 0.8rem;
+    border-radius: 8px;
+}
 
 .logistics-alert {
     background: rgba(245, 158, 11, 0.1);
@@ -600,10 +679,29 @@ input:focus, select:focus {
     margin-left: 0.5rem;
 }
 
-@media (max-width: 480px) {
-    header { padding: 1rem 3%; }
-    .logo h1 { font-size: 1.2rem; }
-    nav button { padding: 0.4rem 0.6rem; font-size: 0.85rem; }
-    .modal-content { width: 98%; padding: 1.5rem; }
+@media (max-width: 768px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .dashboard-header { flex-direction: column; align-items: flex-start; gap: 1rem; }
+    
+    .modal {
+        justify-content: flex-end;
+        align-items: flex-end;
+    }
+    
+    .modal-content {
+        height: 92vh;
+        border-left: none;
+        border-top: 1px solid var(--glass-border);
+        border-radius: 24px 24px 0 0;
+        transform: translateY(100%);
+    }
+    
+    .modal:not(.hidden) .modal-content {
+        transform: translateY(0);
+    }
+    
+    #monthly-calendar-container .calendar-month-grid {
+        min-width: 700px; /* Ensure weekend days are visible via scroll */
+    }
 }
 
