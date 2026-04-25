@@ -22,8 +22,10 @@ const mainNav = document.getElementById('main-nav');
 
 function showAuthError(msg) {
     const el = document.getElementById('auth-error');
-    el.textContent = msg;
-    el.style.display = 'block';
+    if (el) {
+        el.textContent = msg;
+        el.style.display = 'block';
+    }
 }
 
 function switchAuthTab(type) {
@@ -33,18 +35,18 @@ function switchAuthTab(type) {
     const tabRegister = document.getElementById('tab-register');
     const errorEl = document.getElementById('auth-error');
 
-    errorEl.style.display = 'none';
+    if (errorEl) errorEl.style.display = 'none';
 
     if (type === 'login') {
-        loginForm.style.display = 'block';
-        registerForm.style.display = 'none';
-        tabLogin.classList.add('active');
-        tabRegister.classList.remove('active');
+        if (loginForm) loginForm.style.display = 'block';
+        if (registerForm) registerForm.style.display = 'none';
+        if (tabLogin) tabLogin.classList.add('active');
+        if (tabRegister) tabRegister.classList.remove('active');
     } else {
-        loginForm.style.display = 'none';
-        registerForm.style.display = 'block';
-        tabLogin.classList.remove('active');
-        tabRegister.classList.add('active');
+        if (loginForm) loginForm.style.display = 'none';
+        if (registerForm) registerForm.style.display = 'block';
+        if (tabLogin) tabLogin.classList.remove('active');
+        if (tabRegister) tabRegister.classList.add('active');
     }
 }
 
@@ -58,9 +60,9 @@ async function handleAuthSubmit(e) {
     const errorEl   = document.getElementById('auth-error');
     const submitBtn = document.getElementById(isLogin ? 'login-submit' : 'register-submit');
 
-    loadingEl.style.display = 'block';
-    submitBtn.disabled = true;
-    errorEl.style.display = 'none';
+    if (loadingEl) loadingEl.style.display = 'block';
+    if (submitBtn) submitBtn.disabled = true;
+    if (errorEl) errorEl.style.display = 'none';
 
     try {
         let result;
@@ -69,8 +71,8 @@ async function handleAuthSubmit(e) {
         } else {
             result = await _supabase.auth.signUp({ email, password });
             if (!result.error && result.data.user && !result.data.session) {
-                loadingEl.style.display = 'none';
-                submitBtn.disabled = false;
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (submitBtn) submitBtn.disabled = false;
                 showAuthError('✅ Registrazione avvenuta! Controlla la tua email per confermare l\'account, poi accedi.');
                 return;
             }
@@ -82,8 +84,8 @@ async function handleAuthSubmit(e) {
     } catch (err) {
         showAuthError('Errore di connessione. Riprova.');
     } finally {
-        loadingEl.style.display = 'none';
-        submitBtn.disabled = false;
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (submitBtn) submitBtn.disabled = false;
     }
 }
 
@@ -186,8 +188,9 @@ async function loadFromCloud() {
                         if (day.meals[slot]) {
                             const currentMeal = day.meals[slot];
                             // Cerca nel DB locale (gestisce snacksDB se separato)
-                            let updated = recipesDB.find(r => r.id === currentMeal.id) || 
-                                          (typeof snacksDB !== 'undefined' ? snacksDB.find(r => r.id === currentMeal.id) : null);
+                            // Usiamo String() per confronto sicuro tra ID numerici e stringhe (es. vecchi l26)
+                            let updated = recipesDB.find(r => String(r.id) === String(currentMeal.id)) || 
+                                          (typeof snacksDB !== 'undefined' ? snacksDB.find(r => String(r.id) === String(currentMeal.id)) : null);
                             
                             if (updated) {
                                 const isExcluded = currentMeal.excluded;
@@ -242,7 +245,7 @@ function ensurePlanCoversWindow() {
             const newDay = generateSingleDay(appState.user.targetCalories, appState.user.dislikes, appState.user.bannedRecipeIds);
             newDay.date = dateStr;
             ['breakfast', 'snack', 'lunch'].forEach(t => {
-                if (newDay.meals[t]) newDay.meals[t].mealInstanceId = `${dateStr}-${t}`;
+                if (newDay.meals && newDay.meals[t]) newDay.meals[t].mealInstanceId = `${dateStr}-${t}`;
             });
             appState.plan.push(newDay);
             added++;
@@ -262,18 +265,10 @@ function ensurePlanCoversWindow() {
 document.addEventListener('DOMContentLoaded', () => {
     console.log("NutriPlan: App Inizializzata (DOM Ready)");
     
-    // Controllo preventivo per sessioni corrotte (comune fuori da incognito)
-    if (localStorage.getItem('supabase.auth.token') && !sessionStorage.getItem('nutriplan_init_check')) {
-        console.log("NutriPlan: Eseguo controllo integrità sessione...");
-        sessionStorage.setItem('nutriplan_init_check', 'true');
-    }
-
     // Fallback di sicurezza: rimuove SEMPRE il loader globale dopo 4 secondi.
-    // Previene il blocco su "Sincronizzazione in corso..." se F5 causa un hang di Supabase.
     setTimeout(() => {
         const loader = document.getElementById('global-loader');
         if (loader && loader.style.display !== 'none') {
-            console.warn("NutriPlan: Timeout globale di sicurezza raggiunto. Nascondo loader.");
             loader.style.opacity = '0';
             setTimeout(() => loader.style.display = 'none', 500);
         }
@@ -283,52 +278,27 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("NutriPlan: Auth Event ->", event);
         
         if (session && session.user) {
-            console.log("NutriPlan: Sessione attiva per", session.user.email);
-            try {
-                currentUser = session.user;
-                
-                // 1. Carica le ricette se non ancora presenti
-                if (!recipesLoaded) {
-                    const success = await fetchRecipesFromSupabase();
-                    if (!success) {
-                        showAuthError("Impossibile caricare il database delle ricette. Riprova più tardi.");
-                        return;
-                    }
-                }
+            currentUser = session.user;
+            
+            if (!recipesLoaded) {
+                await fetchRecipesFromSupabase();
+            }
 
-                // 2. Assicura che i listener siano pronti
-                setupEventListeners();
-                
-                const hasData = await loadFromCloud();
-                
-                if (hasData) {
-                    console.log("NutriPlan: Dati trovati, mostro Dashboard.");
-                    showView('dashboard');
-                } else {
-                    console.log("NutriPlan: Dati non trovati, mostro Onboarding.");
-                    showView('onboarding');
-                }
-            } catch (error) {
-                console.error("NutriPlan: Errore critico in handleAuthChange:", error);
-                
-                // Mostriamo l'errore in UI invece di ricaricare la pagina all'infinito
-                const errorEl = document.getElementById('auth-error');
-                if (errorEl) {
-                    errorEl.textContent = "Errore durante il caricamento dei dati: " + (error.message || "Errore sconosciuto.");
-                    errorEl.style.display = 'block';
-                }
-                
-                showView('auth');
+            setupEventListeners();
+            const hasData = await loadFromCloud();
+            
+            if (hasData) {
+                showView('dashboard');
+            } else {
+                showView('onboarding');
             }
         } else {
-            console.log("NutriPlan: Nessuna sessione o logout, mostro Auth.");
             currentUser = null;
             appState = { user: null, plan: [] };
             setupEventListeners();
             showView('auth');
         }
         
-        // Rimuove loader globale se presente
         const loader = document.getElementById('global-loader');
         if (loader) {
             loader.style.opacity = '0';
@@ -336,14 +306,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 1. Recupera la sessione iniziale proattivamente (risolve il blocco F5)
     _supabase.auth.getSession().then(({ data: { session } }) => {
         handleAuthChange('INITIAL_SESSION_MANUAL', session);
     });
 
-    // 2. Ascolta i cambiamenti successivi
     _supabase.auth.onAuthStateChange((event, session) => {
-        if (event === 'INITIAL_SESSION') return; // Gestita manualmente sopra
+        if (event === 'INITIAL_SESSION') return;
         handleAuthChange(event, session);
     });
 
@@ -351,9 +319,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (onboardingForm) onboardingForm.addEventListener('submit', handleOnboardingSubmit);
 });
 
-/**
- * Funzione di emergenza per resettare l'app se bloccata (utilizzabile dalla console o link)
- */
 async function resetAppSession() {
     await _supabase.auth.signOut();
     localStorage.clear();
@@ -362,14 +327,15 @@ async function resetAppSession() {
 }
 
 function setupEventListeners() {
-    // Guard: don't add listeners twice
     if (document._listenersSetup) return;
     document._listenersSetup = true;
 
-    navDashboard.addEventListener('click', () => showView('dashboard'));
-    document.getElementById('nav-calendar').addEventListener('click', () => showView('calendar'));
-    navShopping.addEventListener('click',  () => showView('shopping'));
-    document.getElementById('nav-profile').addEventListener('click', () => showView('profile'));
+    if (navDashboard) navDashboard.addEventListener('click', () => showView('dashboard'));
+    const navCal = document.getElementById('nav-calendar');
+    if (navCal) navCal.addEventListener('click', () => showView('calendar'));
+    if (navShopping) navShopping.addEventListener('click',  () => showView('shopping'));
+    const navProf = document.getElementById('nav-profile');
+    if (navProf) navProf.addEventListener('click', () => showView('profile'));
 
     const loginForm = document.getElementById('login-form');
     if (loginForm) loginForm.addEventListener('submit', handleAuthSubmit);
@@ -377,20 +343,24 @@ function setupEventListeners() {
     const registerForm = document.getElementById('register-form');
     if (registerForm) registerForm.addEventListener('submit', handleAuthSubmit);
 
-    document.getElementById('btn-logout').addEventListener('click', async () => {
+    const btnLogout = document.getElementById('btn-logout');
+    if (btnLogout) btnLogout.addEventListener('click', async () => {
         await _supabase.auth.signOut();
-        // onAuthStateChange will fire and redirect to auth view
     });
 
-    document.getElementById('btn-close-modal').addEventListener('click', closeModal);
+    const btnCloseModal = document.getElementById('btn-close-modal');
+    if (btnCloseModal) btnCloseModal.addEventListener('click', closeModal);
 
-    document.getElementById('meal-modal').addEventListener('click', (e) => {
+    const mealModal = document.getElementById('meal-modal');
+    if (mealModal) mealModal.addEventListener('click', (e) => {
         if (e.target.id === 'meal-modal') closeModal();
     });
 
-    document.getElementById('generate-shopping').addEventListener('click', generateShoppingList);
+    const btnGenShop = document.getElementById('generate-shopping');
+    if (btnGenShop) btnGenShop.addEventListener('click', generateShoppingList);
 
-    document.getElementById('btn-regenerate').addEventListener('click', () => {
+    const btnRegen = document.getElementById('btn-regenerate');
+    if (btnRegen) btnRegen.addEventListener('click', () => {
         if (confirm('Vuoi rigenerare il piano per i prossimi 7 giorni?')) {
             appState.plan = generateMonthlyPlan(appState.user.targetCalories, appState.user.dislikes, appState.user.bannedRecipeIds);
             debouncedSave();
@@ -398,10 +368,11 @@ function setupEventListeners() {
         }
     });
 
-    document.getElementById('btn-reset').addEventListener('click', () => {
+    const btnReset = document.getElementById('btn-reset');
+    if (btnReset) btnReset.addEventListener('click', () => {
         if (confirm('Sei sicuro? Verranno cancellati tutti i tuoi dati e il piano attuale.')) {
             appState = { user: null, plan: [] };
-            saveToCloud(); // saves empty
+            saveToCloud();
             showView('onboarding');
         }
     });
@@ -422,43 +393,40 @@ function showView(viewName) {
     allNavBtns.forEach(b => { if (b) b.classList.remove('active'); });
 
     if (viewName === 'auth') {
-        document.getElementById('view-auth').classList.remove('hidden');
-        document.getElementById('view-auth').classList.add('active');
-        mainNav.classList.add('hidden');
+        const v = document.getElementById('view-auth');
+        if (v) { v.classList.remove('hidden'); v.classList.add('active'); }
+        if (mainNav) mainNav.classList.add('hidden');
 
     } else if (viewName === 'onboarding') {
-        viewOnboarding.classList.remove('hidden');
-        viewOnboarding.classList.add('active');
-        mainNav.classList.add('hidden');
+        if (viewOnboarding) { viewOnboarding.classList.remove('hidden'); viewOnboarding.classList.add('active'); }
+        if (mainNav) mainNav.classList.add('hidden');
 
     } else if (viewName === 'dashboard') {
-        viewDashboard.classList.remove('hidden');
-        viewDashboard.classList.add('active');
-        navDashboard.classList.add('active');
-        mainNav.classList.remove('hidden');
+        if (viewDashboard) { viewDashboard.classList.remove('hidden'); viewDashboard.classList.add('active'); }
+        if (navDashboard) navDashboard.classList.add('active');
+        if (mainNav) mainNav.classList.remove('hidden');
         renderDashboard();
 
     } else if (viewName === 'shopping') {
-        viewShopping.classList.remove('hidden');
-        viewShopping.classList.add('active');
-        navShopping.classList.add('active');
-        mainNav.classList.remove('hidden');
+        if (viewShopping) { viewShopping.classList.remove('hidden'); viewShopping.classList.add('active'); }
+        if (navShopping) navShopping.classList.add('active');
+        if (mainNav) mainNav.classList.remove('hidden');
         renderShoppingSelector();
 
     } else if (viewName === 'calendar') {
         const vc = document.getElementById('view-calendar');
-        vc.classList.remove('hidden');
-        vc.classList.add('active');
-        document.getElementById('nav-calendar').classList.add('active');
-        mainNav.classList.remove('hidden');
+        if (vc) { vc.classList.remove('hidden'); vc.classList.add('active'); }
+        const nc = document.getElementById('nav-calendar');
+        if (nc) nc.classList.add('active');
+        if (mainNav) mainNav.classList.remove('hidden');
         renderMonthlyCalendar();
 
     } else if (viewName === 'profile') {
         const pv = document.getElementById('view-profile');
-        pv.classList.remove('hidden');
-        pv.classList.add('active');
-        document.getElementById('nav-profile').classList.add('active');
-        mainNav.classList.remove('hidden');
+        if (pv) { pv.classList.remove('hidden'); pv.classList.add('active'); }
+        const np = document.getElementById('nav-profile');
+        if (np) np.classList.add('active');
+        if (mainNav) mainNav.classList.remove('hidden');
         renderProfile();
     }
 }
@@ -496,10 +464,10 @@ function handleOnboardingSubmit(e) {
 function renderDashboard() {
     if (!appState.user) return;
     try {
-        ensurePlanCoversWindow(); // Assicura che oggi sia coperto
+        ensurePlanCoversWindow();
 
-        document.getElementById('caloric-info').innerHTML =
-            'Fabbisogno calcolato: <span class="highlight">' + appState.user.targetCalories + ' kcal</span>/giorno';
+        const calInfo = document.getElementById('caloric-info');
+        if (calInfo) calInfo.innerHTML = 'Fabbisogno calcolato: <span class="highlight">' + appState.user.targetCalories + ' kcal</span>/giorno';
 
         const grid = document.getElementById('calendar-grid');
         if (!grid) return;
@@ -515,9 +483,9 @@ function renderDashboard() {
 
         visiblePlan.forEach(dayPlan => {
             let totalCals = 0;
-            if (dayPlan.meals.breakfast && !dayPlan.meals.breakfast.excluded) totalCals += dayPlan.meals.breakfast.calories;
-            if (dayPlan.meals.lunch && !dayPlan.meals.lunch.excluded)     totalCals += dayPlan.meals.lunch.calories;
-            if (dayPlan.meals.snack && !dayPlan.meals.snack.excluded) totalCals += dayPlan.meals.snack.calories;
+            if (dayPlan.meals.breakfast && !dayPlan.meals.breakfast.excluded) totalCals += dayPlan.meals.breakfast.calories || 0;
+            if (dayPlan.meals.lunch && !dayPlan.meals.lunch.excluded)     totalCals += dayPlan.meals.lunch.calories || 0;
+            if (dayPlan.meals.snack && !dayPlan.meals.snack.excluded) totalCals += dayPlan.meals.snack.calories || 0;
 
             const card = document.createElement('div');
             card.className = 'day-card';
@@ -544,7 +512,6 @@ function renderDashboard() {
             grid.appendChild(card);
         });
 
-        // Event listeners for buttons in cards
         setupDashboardInteractions();
     } catch (err) {
         console.error("NutriPlan: Errore durante renderDashboard:", err);
@@ -617,12 +584,7 @@ function openMealDetails(date, mealType) {
     const meal    = dayPlan.meals[mealType];
     const labels  = { breakfast: 'Colazione', lunch: 'Pranzo', snack: 'Spuntino' };
 
-    const dateObj = new Date(date + 'T00:00:00');
-    const dateStr = dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' });
-
     let html = '';
-    
-    // Header Image (if available)
     if (meal.imageUrl) {
         html += `<img src="${meal.imageUrl}" class="recipe-header-img" alt="${meal.name}">`;
     }
@@ -632,65 +594,46 @@ function openMealDetails(date, mealType) {
         <h2 style="font-size:1.8rem; margin-bottom:1.5rem;">${meal.name}</h2>
         
         <div class="recipe-meta">
-            <div class="meta-item">
-                <span class="label">Energia</span>
-                <span class="value">${meal.calories} kcal</span>
-            </div>
-            <div class="meta-item">
-                <span class="label">Proteine</span>
-                <span class="value">${meal.macros.protein}g</span>
-            </div>
-            <div class="meta-item">
-                <span class="label">Carboidrati</span>
-                <span class="value">${meal.macros.carbs}g</span>
-            </div>
-            <div class="meta-item">
-                <span class="label">Grassi</span>
-                <span class="value">${meal.macros.fat}g</span>
-            </div>
+            <div class="meta-item"><span class="label">Energia</span><span class="value">${meal.calories} kcal</span></div>
+            <div class="meta-item"><span class="label">Proteine</span><span class="value">${meal.macros?.protein || 0}g</span></div>
+            <div class="meta-item"><span class="label">Carboidrati</span><span class="value">${meal.macros?.carbs || 0}g</span></div>
+            <div class="meta-item"><span class="label">Grassi</span><span class="value">${meal.macros?.fat || 0}g</span></div>
         </div>
 
         <div class="recipe-section">
-            <h4><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Ingredienti</h4>
+            <h4>Ingredienti</h4>
             <div style="display:grid; gap:0.5rem;">
-                ${meal.ingredients.map(i => `
+                ${meal.ingredients ? meal.ingredients.map(i => `
                     <div class="ingredient-check-item">
                         <span style="font-weight:600; color:var(--accent-primary); min-width:60px;">${i.amount}${i.unit}</span>
                         <span>${i.name}</span>
                     </div>
-                `).join('')}
+                `).join('') : ''}
             </div>
         </div>
 
         <div class="recipe-section">
-            <h4><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> Preparazione</h4>
+            <h4>Preparazione</h4>
             <ol style="line-height:1.8;">
-                ${meal.instructions.map(s => `<li>${s}</li>`).join('')}
+                ${meal.instructions ? meal.instructions.map(s => `<li>${s}</li>`).join('') : ''}
             </ol>
         </div>`;
 
-    if (meal.sourceUrl && meal.sourceUrl.length > 30) {
+    if (meal.sourceUrl && meal.sourceUrl.length > 10) {
         html += `<div class="recipe-source-container">
-            <a href="${meal.sourceUrl}" target="_blank" class="recipe-source-link">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                Ricetta Originale
-            </a>
+            <a href="${meal.sourceUrl}" target="_blank" class="recipe-source-link">Ricetta Originale</a>
         </div>`;
     }
     
-    html += `</div>`; // Close recipe-body
+    html += `</div>`;
 
     document.getElementById('meal-details').innerHTML = html;
     document.getElementById('meal-modal').classList.remove('hidden');
-    // Blocco scroll body
     document.body.style.overflow = 'hidden';
-    // Ensure modal scroll is at top
-    document.querySelector('#meal-modal .modal-content').scrollTop = 0;
 }
 
 function closeModal() { 
     document.getElementById('meal-modal').classList.add('hidden'); 
-    // Ripristino scroll body
     document.body.style.overflow = '';
 }
 
@@ -699,15 +642,12 @@ function closeModal() {
 // ============================================================
 
 function swapMeal(date, mealType) {
-    const idx     = appState.plan.findIndex(p => p.date === date);
-    if (appState.plan[idx].confirmed) return; // Non cambiare se confermato
+    const idx = appState.plan.findIndex(p => p.date === date);
+    if (appState.plan[idx].confirmed) return;
 
     const current = appState.plan[idx].meals[mealType];
-    
-    // Aggiungiamo l'attuale a quelli da evitare in questa sessione
     if (!sessionSkippedIds.includes(current.id)) {
         sessionSkippedIds.push(current.id);
-        // Limitiamo la coda a 15 elementi per non svuotare troppo il pool
         if (sessionSkippedIds.length > 15) sessionSkippedIds.shift();
     }
 
@@ -717,8 +657,6 @@ function swapMeal(date, mealType) {
         appState.plan[idx].meals[mealType] = Object.assign({}, alt, { mealInstanceId: date + '-' + mealType + '-' + Date.now() });
         debouncedSave();
         renderDashboard();
-    } else {
-        alert('Nessuna alternativa trovata nel database.');
     }
 }
 
@@ -747,7 +685,7 @@ function banRecipe(date, mealType) {
         if (!appState.user.bannedRecipeIds.includes(meal.id)) {
             appState.user.bannedRecipeIds.push(meal.id);
         }
-        swapMeal(date, mealType); // Sostituisci subito
+        swapMeal(date, mealType);
     }
 }
 
@@ -782,7 +720,8 @@ function renderProfile() {
         + '<button class="btn btn-small" onclick="updateProfileField(\'dislikes\', document.getElementById(\'edit-dislikes\').value)">Salva</button>'
         + '</div></div>';
 
-    document.getElementById('profile-data').innerHTML = html;
+    const pData = document.getElementById('profile-data');
+    if (pData) pData.innerHTML = html;
 }
 
 function profileEditCard(label, value, type, field, options) {
@@ -794,3 +733,136 @@ function profileEditCard(label, value, type, field, options) {
         + '</div>'
         + '</div>';
 }
+
+function showInlineEdit(btn, field, type) {
+    const row = btn.closest('.value-row');
+    const oldValue = row.querySelector('.value').textContent;
+    let inputHtml = '';
+
+    if (field === 'activity') {
+        inputHtml = '<select id="inline-edit-' + field + '">'
+            + '<option value="1.2">Sedentario</option>'
+            + '<option value="1.375">Leggero</option>'
+            + '<option value="1.55">Moderato</option>'
+            + '<option value="1.725">Attivo</option>'
+            + '</select>';
+    } else if (field === 'goal') {
+        inputHtml = '<select id="inline-edit-' + field + '">'
+            + '<option value="lose">Perdita peso</option>'
+            + '<option value="maintain">Mantenimento</option>'
+            + '<option value="gain">Aumento massa</option>'
+            + '</select>';
+    } else {
+        inputHtml = '<input type="' + type + '" id="inline-edit-' + field + '" value="' + parseFloat(oldValue) + '">';
+    }
+
+    row.innerHTML = inputHtml + '<button class="btn-save-inline" onclick="updateProfileField(\'' + field + '\', document.getElementById(\'inline-edit-' + field + '\').value)">✓</button>';
+}
+
+function updateProfileField(field, value) {
+    if (field === 'weight' || field === 'height' || field === 'age' || field === 'activity') {
+        appState.user[field] = parseFloat(value);
+    } else {
+        appState.user[field] = value;
+    }
+    const bmr = calculateBMR(appState.user.weight, appState.user.height, appState.user.age, appState.user.gender);
+    const tdee = calculateTDEE(bmr, appState.user.activity);
+    appState.user.targetCalories = calculateTargetCalories(tdee, appState.user.goal);
+    debouncedSave();
+    renderProfile();
+}
+
+function profileCard(label, value, accent) {
+    return '<div style="background:rgba(0,0,0,0.2);border-radius:12px;padding:1rem;border:1px solid rgba(255,255,255,0.05);">'
+        + '<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem;">' + label + '</div>'
+        + '<div style="font-size:1.1rem;font-weight:700;' + (accent ? 'color:var(--accent-primary);' : '') + '">' + value + '</div>'
+        + '</div>';
+}
+
+function renderShoppingSelector() {
+    const container = document.getElementById('shopping-days-selector');
+    if (!container || !appState.plan) return;
+    container.innerHTML = '';
+    const today = getTodayISO();
+    const visiblePlan = appState.plan.filter(p => p.date >= today).slice(0, 7);
+    visiblePlan.forEach(p => {
+        const dateObj = new Date(p.date + 'T00:00:00');
+        const dayName = dateObj.toLocaleDateString('it-IT', { weekday: 'short' });
+        const dayNum  = dateObj.getDate();
+        const label = document.createElement('label');
+        label.style = "display: flex; align-items: center; gap: 0.5rem; cursor: pointer; background: rgba(255,255,255,0.05); padding: 0.5rem 0.8rem; border-radius: 8px; border: 1px solid var(--glass-border);";
+        label.innerHTML = `<input type="checkbox" class="day-checkbox" value="${p.date}" checked> ${dayName} ${dayNum}`;
+        container.appendChild(label);
+    });
+}
+
+function generateShoppingList() {
+    const selectedDates = Array.from(document.querySelectorAll('.day-checkbox:checked')).map(cb => cb.value);
+    if (selectedDates.length === 0) return;
+    const daysToShop = appState.plan.filter(p => selectedDates.includes(p.date));
+    const categories = {};
+    daysToShop.forEach(dayPlan => {
+        const add = meal => {
+            if (!meal || meal.excluded) return;
+            meal.ingredients.forEach(ing => {
+                const cat = ing.category || 'Altro';
+                if (!categories[cat]) categories[cat] = {};
+                if (!categories[cat][ing.name]) categories[cat][ing.name] = { name: ing.name, amount: 0, unit: ing.unit };
+                categories[cat][ing.name].amount += ing.amount;
+            });
+        };
+        add(dayPlan.meals.breakfast);
+        if (dayPlan.meals.snack) add(dayPlan.meals.snack);
+        add(dayPlan.meals.lunch);
+    });
+    let html = '<h3 style="margin-bottom:1.5rem;text-align:center;">Lista della Spesa</h3>';
+    const icons = { 'Ortofrutta': '🥬', 'Carne e Pesce': '🥩', 'Latticini': '🧀', 'Dispensa': '🥫', 'Panetteria': '🍞', 'Altro': '🛒' };
+    Object.keys(categories).sort().forEach(cat => {
+        html += '<div style="margin-bottom:2rem;"><h4>' + (icons[cat] || '🛒') + ' ' + cat + '</h4><ul class="ingredient-list">';
+        Object.values(categories[cat]).forEach((item, i) => {
+            html += '<li class="ingredient-item">' + item.name + ': ' + Math.round(item.amount) + ' ' + item.unit + '</li>';
+        });
+        html += '</ul></div>';
+    });
+    document.getElementById('shopping-list-content').innerHTML = html;
+}
+
+function renderMonthlyCalendar() {
+    const container = document.getElementById('monthly-calendar-container');
+    if (!container) return;
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear  = now.getFullYear();
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    let html = `<div class="calendar-month-grid">`;
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const dayPlan = appState.plan.find(p => p.date === dateStr);
+        html += `<div class="calendar-day-cell"><strong>${day}</strong>`;
+        if (dayPlan) {
+            if (dayPlan.meals.breakfast) html += `<div>☕ ${dayPlan.meals.breakfast.name}</div>`;
+            if (dayPlan.meals.lunch) html += `<div>🍝 ${dayPlan.meals.lunch.name}</div>`;
+        }
+        html += `</div>`;
+    }
+    html += `</div>`;
+    container.innerHTML = html;
+}
+
+// Esposizione globale per HTML onclick
+window.showView = showView;
+window.renderProfile = renderProfile;
+window.renderDashboard = renderDashboard;
+window.renderMonthlyCalendar = renderMonthlyCalendar;
+window.renderShoppingSelector = renderShoppingSelector;
+window.generateShoppingList = generateShoppingList;
+window.openMealDetails = openMealDetails;
+window.closeModal = closeModal;
+window.confirmDay = confirmDay;
+window.unlockDay = unlockDay;
+window.swapMeal = swapMeal;
+window.banRecipe = banRecipe;
+window.updateProfileField = updateProfileField;
+window.showInlineEdit = showInlineEdit;
+window.switchAuthTab = switchAuthTab;
+window.resetAppSession = resetAppSession;

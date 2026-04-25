@@ -21,18 +21,20 @@ async function checkAdminAuth() {
 }
 
 async function handleAdminLogin(e) {
-    e.preventDefault();
+    if (e) e.preventDefault();
     const email = document.getElementById('admin-email').value;
     const password = document.getElementById('admin-password').value;
     const errorEl = document.getElementById('admin-auth-error');
     
-    errorEl.style.display = 'none';
+    if (errorEl) errorEl.style.display = 'none';
 
-    const { data, error } = await _supabase.auth.signInWithPassword({ email, password });
+    const { error } = await _supabase.auth.signInWithPassword({ email, password });
     
     if (error) {
-        errorEl.textContent = "Errore: " + error.message;
-        errorEl.style.display = 'block';
+        if (errorEl) {
+            errorEl.textContent = "Errore: " + error.message;
+            errorEl.style.display = 'block';
+        }
     } else {
         checkAdminAuth();
     }
@@ -55,11 +57,13 @@ async function loadAllRecipes() {
 
     allRecipes = data;
     renderRecipeList(allRecipes);
-    document.getElementById('recipe-count').textContent = `${allRecipes.length} ricette nel database`;
+    const countEl = document.getElementById('recipe-count');
+    if (countEl) countEl.textContent = `${allRecipes.length} ricette nel database`;
 }
 
 function renderRecipeList(recipes) {
     const list = document.getElementById('recipe-list');
+    if (!list) return;
     list.innerHTML = '';
 
     recipes.forEach(r => {
@@ -73,7 +77,7 @@ function renderRecipeList(recipes) {
                 <p class="text-muted" style="font-size: 0.8rem;">${r.base_calories} kcal</p>
             </div>
             <div class="recipe-actions">
-                <button class="btn-small" onclick="openEditor(${r.id})">Modifica</button>
+                <button class="btn-small" onclick="openEditor('${r.id}')">Modifica</button>
                 <a href="${r.source_url}" target="_blank" class="btn-small" style="text-decoration:none; text-align:center;">Vedi Fonte</a>
             </div>
         `;
@@ -107,9 +111,9 @@ function openEditor(id = null) {
     const deleteBtn = document.getElementById('btn-delete-recipe');
 
     if (id) {
-        const r = allRecipes.find(recipe => recipe.id === id);
-        title.textContent = "Modifica Ricetta";
-        deleteBtn.style.display = 'block';
+        const r = allRecipes.find(recipe => String(recipe.id) === String(id));
+        if (title) title.textContent = "Modifica Ricetta";
+        if (deleteBtn) deleteBtn.style.display = 'block';
         
         document.getElementById('edit-id').value = r.id;
         document.getElementById('edit-name').value = r.name;
@@ -121,26 +125,27 @@ function openEditor(id = null) {
         document.getElementById('edit-instructions').value = JSON.stringify(r.instructions, null, 2);
         document.getElementById('edit-macros').value = JSON.stringify(r.macros);
     } else {
-        title.textContent = "Aggiungi Nuova Ricetta";
-        deleteBtn.style.display = 'none';
-        form.reset();
+        if (title) title.textContent = "Aggiungi Nuova Ricetta";
+        if (deleteBtn) deleteBtn.style.display = 'none';
+        if (form) form.reset();
         document.getElementById('edit-id').value = '';
         document.getElementById('edit-ingredients').value = '[\n  {\n    "name": "",\n    "amount": 0,\n    "unit": "g",\n    "category": ""\n  }\n]';
         document.getElementById('edit-instructions').value = '[\n  "Fase 1",\n  "Fase 2"\n]';
         document.getElementById('edit-macros').value = '{"protein": 0, "carbs": 0, "fat": 0}';
     }
 
-    modal.classList.remove('hidden');
+    if (modal) modal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
 }
 
 function closeEditor() {
-    document.getElementById('editor-modal').classList.add('hidden');
+    const modal = document.getElementById('editor-modal');
+    if (modal) modal.classList.add('hidden');
     document.body.style.overflow = '';
 }
 
 async function handleEditorSubmit(e) {
-    e.preventDefault();
+    if (e) e.preventDefault();
     
     try {
         const id = document.getElementById('edit-id').value;
@@ -155,14 +160,11 @@ async function handleEditorSubmit(e) {
             macros: JSON.parse(document.getElementById('edit-macros').value)
         };
 
-        let result;
         if (id) {
-            result = await _supabase.from('recipes').update(payload).eq('id', id);
+            await _supabase.from('recipes').update(payload).eq('id', id);
         } else {
-            result = await _supabase.from('recipes').insert([payload]);
+            await _supabase.from('recipes').insert([payload]);
         }
-
-        if (result.error) throw result.error;
 
         alert("Salvataggio completato!");
         closeEditor();
@@ -174,7 +176,7 @@ async function handleEditorSubmit(e) {
 
 async function deleteRecipe() {
     if (!currentEditingId) return;
-    if (!confirm("Sei sicuro di voler eliminare questa ricetta? L'azione è irreversibile.")) return;
+    if (!confirm("Sei sicuro di voler eliminare questa ricetta?")) return;
 
     const { error } = await _supabase
         .from('recipes')
@@ -197,16 +199,36 @@ async function deleteRecipe() {
 document.addEventListener('DOMContentLoaded', () => {
     checkAdminAuth();
 
-    document.getElementById('admin-login-form').addEventListener('submit', handleAdminLogin);
-    document.getElementById('btn-logout-admin').addEventListener('click', async () => {
+    const loginForm = document.getElementById('admin-login-form');
+    if (loginForm) loginForm.addEventListener('submit', handleAdminLogin);
+    
+    const btnLogout = document.getElementById('btn-logout-admin');
+    if (btnLogout) btnLogout.addEventListener('click', async () => {
         await _supabase.auth.signOut();
         checkAdminAuth();
     });
 
-    document.getElementById('recipe-search').addEventListener('input', filterRecipes);
-    document.getElementById('filter-type').addEventListener('change', filterRecipes);
-    document.getElementById('btn-add-recipe').addEventListener('click', () => openEditor());
-    document.getElementById('btn-close-editor').addEventListener('click', closeEditor);
-    document.getElementById('recipe-editor-form').addEventListener('submit', handleEditorSubmit);
-    document.getElementById('btn-delete-recipe').addEventListener('click', deleteRecipe);
+    const searchInput = document.getElementById('recipe-search');
+    if (searchInput) searchInput.addEventListener('input', filterRecipes);
+    
+    const typeFilter = document.getElementById('filter-type');
+    if (typeFilter) typeFilter.addEventListener('change', filterRecipes);
+    
+    const btnAdd = document.getElementById('btn-add-recipe');
+    if (btnAdd) btnAdd.addEventListener('click', () => openEditor());
+    
+    const btnClose = document.getElementById('btn-close-editor');
+    if (btnClose) btnClose.addEventListener('click', closeEditor);
+    
+    const editorForm = document.getElementById('recipe-editor-form');
+    if (editorForm) editorForm.addEventListener('submit', handleEditorSubmit);
+    
+    const btnDel = document.getElementById('btn-delete-recipe');
+    if (btnDel) btnDel.addEventListener('click', deleteRecipe);
 });
+
+// Esposizione globale per HTML onclick
+window.openEditor = openEditor;
+window.closeEditor = closeEditor;
+window.deleteRecipe = deleteRecipe;
+window.handleAdminLogin = handleAdminLogin;

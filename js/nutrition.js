@@ -60,7 +60,7 @@ function getSafeRecipes(dislikesStr, pool, bannedRecipeIds) {
     const banned = bannedRecipeIds || [];
 
     // Prima filtra le ricette bannate dall'utente
-    let filtered = pool.filter(r => !banned.includes(r.id));
+    let filtered = pool.filter(r => r && !banned.includes(String(r.id)));
 
     if (!dislikesStr || dislikesStr.trim() === '') return filtered;
 
@@ -72,7 +72,7 @@ function getSafeRecipes(dislikesStr, pool, bannedRecipeIds) {
     
     const expandedDislikes = new Set(rawDislikes);
     rawDislikes.forEach(d => {
-        // Cerca corrispondenze parziali nelle chiavi del MAP (es. "crostacei" se l'utente scrive "i crostacei")
+        // Cerca corrispondenze parziali nelle chiavi del MAP
         Object.keys(FOOD_CATEGORY_MAP).forEach(cat => {
             if (d.includes(cat) || cat.includes(d)) {
                 FOOD_CATEGORY_MAP[cat].forEach(synonym => expandedDislikes.add(synonym));
@@ -103,18 +103,22 @@ function findClosestMeal(safePool, targetCals, avoidIds = []) {
     if (safePool.length === 0) return null;
     
     // Filtra ulteriormente per evitare ricette in avoidIds
-    let filteredPool = safePool.filter(r => !avoidIds.includes(r.id));
+    let filteredPool = safePool.filter(r => r && !avoidIds.includes(String(r.id)));
     
     // Se svuotiamo troppo il pool, torniamo a quello sicuro originale (fallback)
     const finalPool = filteredPool.length > 0 ? filteredPool : safePool;
 
-    const sorted = [...finalPool].sort((a, b) =>
-        Math.abs(a.baseCalories - targetCals) - Math.abs(b.baseCalories - targetCals)
-    );
+    const sorted = [...finalPool].sort((a, b) => {
+        const valA = a.baseCalories || a.calories || 0;
+        const valB = b.baseCalories || b.calories || 0;
+        return Math.abs(valA - targetCals) - Math.abs(valB - targetCals);
+    });
     const topChoices = sorted.slice(0, 3);
     const chosen = topChoices[Math.floor(Math.random() * topChoices.length)];
+    if (!chosen) return null;
+    
     const meal = JSON.parse(JSON.stringify(chosen));
-    meal.calories = meal.baseCalories;
+    meal.calories = meal.baseCalories || meal.calories || 0;
     return meal;
 }
 
@@ -133,12 +137,17 @@ function generateSingleDay(targetCalories, dislikesStr, bannedRecipeIds, avoidId
 
     const targetBreakfastCals = targetCalories * 0.30;
     const targetLunchCals     = targetCalories * 0.55;
-    const targetSnackCals     = targetCalories * 0.15; // Target per spuntino
+    const targetSnackCals     = targetCalories * 0.15; 
 
     const breakfast = findClosestMeal(bPool, targetBreakfastCals, avoidIds);
     const lunch     = findClosestMeal(lPool, targetLunchCals, avoidIds);
 
-    const currentCals   = breakfast.calories + lunch.calories;
+    if (!breakfast || !lunch) {
+        console.warn("NutriPlan: Impossibile generare pasti. Pool vuoti?");
+        return { meals: {} };
+    }
+
+    const currentCals   = (breakfast.calories || 0) + (lunch.calories || 0);
     const remainingCals = targetCalories - currentCals;
 
     let snack = null;
@@ -163,14 +172,11 @@ function generateSingleDay(targetCalories, dislikesStr, bannedRecipeIds, avoidId
 
 /**
  * Genera un piano settimanale (usato solo per rigenerazione completa)
- * Ora ritorna un array con struttura { date, meals } usando le prossime 7 date
  */
 function generateMonthlyPlan(targetCalories, dislikesStr, bannedRecipeIds) {
     const plan = [];
     const banned = bannedRecipeIds || [];
     const today = getTodayISO();
-    
-    // Teniamo traccia degli ID usati in questa generazione per massimizzare la varietà
     const usedInPlanIds = [];
 
     for (let i = 0; i < 7; i++) {
@@ -181,17 +187,15 @@ function generateMonthlyPlan(targetCalories, dislikesStr, bannedRecipeIds) {
         const da = String(d.getDate()).padStart(2, '0');
         const date = `${y}-${mo}-${da}`;
 
-        // Passiamo gli ID già usati per evitare ripetizioni nello stesso piano
         const dayPlan = generateSingleDay(targetCalories, dislikesStr, banned, usedInPlanIds);
         dayPlan.date = date;
-        dayPlan.confirmed = false; // Nuovo stato per conferma
+        dayPlan.confirmed = false; 
 
         const mealTypes = ['breakfast', 'snack', 'lunch'];
         mealTypes.forEach(t => {
-            if (dayPlan.meals[t]) {
+            if (dayPlan.meals && dayPlan.meals[t]) {
                 dayPlan.meals[t].mealInstanceId = `${date}-${t}`;
-                // Aggiungiamo ai usati
-                usedInPlanIds.push(dayPlan.meals[t].id);
+                usedInPlanIds.push(String(dayPlan.meals[t].id));
             }
         });
 
@@ -201,13 +205,13 @@ function generateMonthlyPlan(targetCalories, dislikesStr, bannedRecipeIds) {
 }
 
 /**
- * Trova un'alternativa a un pasto, escludendo bannedRecipeIds e avoidIds
+ * Trova un'alternativa a un pasto
  */
 function findAlternativeMeal(currentMeal, dislikesStr, targetCaloriesForThatMeal, bannedRecipeIds, avoidIds = []) {
     const banned = [...bannedRecipeIds, ...(avoidIds || [])];
-    let pool = recipesDB.filter(r => r.type === currentMeal.type && r.id !== currentMeal.id);
+    let pool = recipesDB.filter(r => r.type === currentMeal.type && String(r.id) !== String(currentMeal.id));
     if (currentMeal.type === 'snack') {
-        pool = snacksDB.filter(s => s.id !== currentMeal.id);
+        pool = snacksDB.filter(s => String(s.id) !== String(currentMeal.id));
     }
     const safePool  = getSafeRecipes(dislikesStr, pool, banned);
     const finalPool = safePool.length > 0 ? safePool : pool;
