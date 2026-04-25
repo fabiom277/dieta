@@ -1,5 +1,10 @@
 // --- NUTRITION LOGIC ---
 
+// Global recipe pools (populated from Supabase)
+let recipesDB = [];
+let snacksDB = [];
+
+
 function getTodayISO() {
     return new Date().toISOString().slice(0, 10);
 }

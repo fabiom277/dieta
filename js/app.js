@@ -3,6 +3,7 @@ let appState = { user: null, plan: [] };
 let currentUser = null; // Supabase auth user
 let saveTimeout = null;
 let sessionSkippedIds = []; // Ricette scartate in questa sessione
+let recipesLoaded = false;
 
 
 // --- DOM REFS ---
@@ -92,6 +93,39 @@ function translateAuthError(msg) {
     if (msg.includes('User already registered'))   return '⚠️ Email già registrata. Usa Accedi.';
     if (msg.includes('Password should be'))        return '⚠️ La password deve essere di almeno 6 caratteri.';
     return msg;
+}
+
+// ============================================================
+// DATA LOADING
+// ============================================================
+
+async function fetchRecipesFromSupabase() {
+    console.log("NutriPlan: Caricamento ricette da Supabase...");
+    try {
+        const { data, error } = await _supabase
+            .from('recipes')
+            .select('*');
+
+        if (error) throw error;
+
+        // Normalizzazione dati per il frontend (snake_case -> camelCase)
+        const normalized = data.map(r => ({
+            ...r,
+            baseCalories: r.base_calories,
+            imageUrl: r.image_url,
+            sourceUrl: r.source_url
+        }));
+
+        recipesDB = normalized.filter(r => r.type !== 'snack');
+        snacksDB = normalized.filter(r => r.type === 'snack');
+
+        console.log(`NutriPlan: ${data.length} ricette caricate con successo.`);
+        recipesLoaded = true;
+        return true;
+    } catch (err) {
+        console.error("NutriPlan: Errore nel caricamento ricette:", err);
+        return false;
+    }
 }
 
 // ============================================================
@@ -253,7 +287,16 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 currentUser = session.user;
                 
-                // Assicura che i listener siano pronti PRIMA di caricare i dati
+                // 1. Carica le ricette se non ancora presenti
+                if (!recipesLoaded) {
+                    const success = await fetchRecipesFromSupabase();
+                    if (!success) {
+                        showAuthError("Impossibile caricare il database delle ricette. Riprova più tardi.");
+                        return;
+                    }
+                }
+
+                // 2. Assicura che i listener siano pronti
                 setupEventListeners();
                 
                 const hasData = await loadFromCloud();
@@ -751,211 +794,3 @@ function profileEditCard(label, value, type, field, options) {
         + '</div>'
         + '</div>';
 }
-
-function showInlineEdit(btn, field, type) {
-    const row = btn.closest('.value-row');
-    const oldValue = row.querySelector('.value').textContent;
-    let inputHtml = '';
-
-    if (field === 'activity') {
-        inputHtml = '<select id="inline-edit-' + field + '">'
-            + '<option value="1.2">Sedentario</option>'
-            + '<option value="1.375">Leggero</option>'
-            + '<option value="1.55">Moderato</option>'
-            + '<option value="1.725">Attivo</option>'
-            + '</select>';
-    } else if (field === 'goal') {
-        inputHtml = '<select id="inline-edit-' + field + '">'
-            + '<option value="lose">Perdita peso</option>'
-            + '<option value="maintain">Mantenimento</option>'
-            + '<option value="gain">Aumento massa</option>'
-            + '</select>';
-    } else {
-        inputHtml = '<input type="' + type + '" id="inline-edit-' + field + '" value="' + parseFloat(oldValue) + '">';
-    }
-
-    row.innerHTML = inputHtml + '<button class="btn-save-inline" onclick="updateProfileField(\'' + field + '\', document.getElementById(\'inline-edit-' + field + '\').value)">✓</button>';
-}
-
-function updateProfileField(field, value) {
-    if (field === 'weight' || field === 'height' || field === 'age' || field === 'activity') {
-        appState.user[field] = parseFloat(value);
-    } else {
-        appState.user[field] = value;
-    }
-
-    // Ricalcola targetCalories
-    const bmr = calculateBMR(appState.user.weight, appState.user.height, appState.user.age, appState.user.gender);
-    const tdee = calculateTDEE(bmr, appState.user.activity);
-    appState.user.targetCalories = calculateTargetCalories(tdee, appState.user.goal);
-
-    debouncedSave();
-    renderProfile();
-}
-
-function profileCard(label, value, accent) {
-    return '<div style="background:rgba(0,0,0,0.2);border-radius:12px;padding:1rem;border:1px solid rgba(255,255,255,0.05);">'
-        + '<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem;">' + label + '</div>'
-        + '<div style="font-size:1.1rem;font-weight:700;' + (accent ? 'color:var(--accent-primary);' : '') + '">' + value + '</div>'
-        + '</div>';
-}
-
-function renderShoppingSelector() {
-    const container = document.getElementById('shopping-days-selector');
-    if (!container || !appState.plan) return;
-    
-    container.innerHTML = '';
-    const today = getTodayISO();
-    const visiblePlan = appState.plan.filter(p => p.date >= today).slice(0, 7);
-
-    visiblePlan.forEach(p => {
-        const dateObj = new Date(p.date + 'T00:00:00');
-        const dayName = dateObj.toLocaleDateString('it-IT', { weekday: 'short' });
-        const dayNum  = dateObj.getDate();
-        
-        const label = document.createElement('label');
-        label.style = "display: flex; align-items: center; gap: 0.5rem; cursor: pointer; background: rgba(255,255,255,0.05); padding: 0.5rem 0.8rem; border-radius: 8px; border: 1px solid var(--glass-border);";
-        label.innerHTML = `<input type="checkbox" class="day-checkbox" value="${p.date}" checked> ${dayName} ${dayNum}`;
-        container.appendChild(label);
-    });
-}
-
-function generateShoppingList() {
-    const selectedDates = Array.from(document.querySelectorAll('.day-checkbox:checked')).map(cb => cb.value);
-    if (selectedDates.length === 0) {
-        document.getElementById('shopping-list-content').innerHTML = '<p class="text-center text-muted">Seleziona almeno un giorno.</p>';
-        return;
-    }
-
-    const daysToShop = appState.plan.filter(p => selectedDates.includes(p.date));
-    const categories = {};
-
-    daysToShop.forEach(dayPlan => {
-        const add = meal => {
-            if (!meal || meal.excluded) return;
-            meal.ingredients.forEach(ing => {
-                const cat = ing.category || 'Altro';
-                if (!categories[cat]) categories[cat] = {};
-                if (!categories[cat][ing.name]) categories[cat][ing.name] = { name: ing.name, amount: 0, unit: ing.unit };
-                categories[cat][ing.name].amount += ing.amount;
-            });
-        };
-        add(dayPlan.meals.breakfast);
-        if (dayPlan.meals.snack) add(dayPlan.meals.snack);
-        add(dayPlan.meals.lunch);
-    });
-
-    if (Object.keys(categories).length === 0) {
-        document.getElementById('shopping-list-content').innerHTML = '<p class="text-center text-muted">Nessun ingrediente trovato.</p>';
-        return;
-    }
-
-    const icons = { 'Ortofrutta': '🥬', 'Carne e Pesce': '🥩', 'Latticini': '🧀', 'Dispensa': '🥫', 'Panetteria': '🍞', 'Altro': '🛒' };
-    
-    let html = '<h3 style="margin-bottom:1.5rem;text-align:center;">Lista della Spesa</h3>';
-    html += '<p class="text-center text-muted" style="margin-bottom:2rem;font-size:0.9rem;">Ingredienti combinati per i giorni selezionati.</p>';
-
-    Object.keys(categories).sort().forEach(cat => {
-        html += '<div class="category-section" style="margin-bottom:2rem;">'
-            + '<h4 style="color:var(--accent-primary);border-bottom:1px solid var(--glass-border);padding-bottom:0.5rem;margin-bottom:1rem;">'
-            + (icons[cat] || '🛒') + ' ' + cat + '</h4><ul class="ingredient-list">';
-
-        Object.values(categories[cat]).sort((a,b) => a.name.localeCompare(b.name)).forEach((item, i) => {
-            const uid = ('ing-' + cat + '-' + i).replace(/\s+/g, '-');
-            html += '<li class="ingredient-item"><div style="display:flex;align-items:center;">'
-                + '<input type="checkbox" class="ingredient-checkbox" id="' + uid + '">'
-                + '<label for="' + uid + '" style="font-weight:500;cursor:pointer;">' + item.name + '</label></div>'
-                + '<span style="color:var(--accent-primary);">' + Math.round(item.amount) + ' ' + item.unit + '</span></li>';
-        });
-        html += '</ul></div>';
-    });
-
-    document.getElementById('shopping-list-content').innerHTML = html;
-
-    document.querySelectorAll('.ingredient-checkbox').forEach(cb => {
-        cb.addEventListener('change', e => {
-            e.target.closest('.ingredient-item').classList.toggle('crossed', e.target.checked);
-        });
-    });
-}
-
-// ============================================================
-// MONTHLY CALENDAR
-// ============================================================
-
-function renderMonthlyCalendar() {
-    const container = document.getElementById('monthly-calendar-container');
-    if (!container) return;
-
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear  = now.getFullYear();
-
-    const monthNames = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
-    
-    // Header con mese
-    let html = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-        <h3>${monthNames[currentMonth]} ${currentYear}</h3>
-    </div>`;
-
-    // Griglia giorni
-    html += `<div class="calendar-month-grid">`;
-    
-    // Header giorni settimana
-    const weekDays = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
-    weekDays.forEach(wd => {
-        html += `<div class="calendar-day-header">${wd}</div>`;
-    });
-
-    const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); // 0 is Sunday
-    const emptySlots = (firstDayOfMonth === 0 ? 7 : firstDayOfMonth) - 1; // Adjust to Monday start
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-
-    // Slot vuoti inizio mese
-    for (let i = 0; i < emptySlots; i++) {
-        html += `<div class="calendar-empty-slot"></div>`;
-    }
-
-    const todayStr = getTodayISO();
-
-    // Giorni del mese
-    for (let day = 1; day <= daysInMonth; day++) {
-        const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const dayPlan = appState.plan.find(p => p.date === dateStr);
-        const isToday = dateStr === todayStr;
-        
-        const todayClass = isToday ? 'is-today' : '';
-        const dayName = weekDays[new Date(currentYear, currentMonth, day).getDay() === 0 ? 6 : new Date(currentYear, currentMonth, day).getDay() - 1];
-
-        html += `<div class="calendar-day-cell ${todayClass}">
-            <div class="calendar-date-number"><span style="width:2.5rem; font-weight:normal; opacity:0.7;" class="mobile-day-name">${dayName}</span> ${day}</div>`;
-        
-        if (dayPlan) {
-            if (dayPlan.meals.breakfast) {
-                html += `<div class="calendar-meal-chip breakfast" onclick="openMealDetails('${dateStr}', 'breakfast')">
-                    <span style="font-size:0.8rem">☕</span> <span>${dayPlan.meals.breakfast.name}</span>
-                </div>`;
-            }
-            if (dayPlan.meals.lunch) {
-                html += `<div class="calendar-meal-chip lunch" onclick="openMealDetails('${dateStr}', 'lunch')">
-                    <span style="font-size:0.8rem">🍝</span> <span>${dayPlan.meals.lunch.name}</span>
-                </div>`;
-            }
-            if (dayPlan.meals.snack) {
-                html += `<div class="calendar-meal-chip snack" onclick="openMealDetails('${dateStr}', 'snack')">
-                    <span style="font-size:0.8rem">🍎</span> <span>${dayPlan.meals.snack.name}</span>
-                </div>`;
-            }
-            if (dayPlan.confirmed) {
-                html += `<div style="font-size:0.6rem; text-align:right; color:#4ade80; margin-top:auto; font-weight:bold;">✅ CONFERMATO</div>`;
-            }
-        }
-        
-        html += `</div>`;
-    }
-
-    html += `</div>`;
-    container.innerHTML = html;
-}
-
-// Rimozione funzioni QR obsolete
