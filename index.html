@@ -45,10 +45,6 @@
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                             Il Mio Profilo
                         </button>
-                        <button id="btn-admin" class="hidden" onclick="app.showView('admin')">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                            Admin
-                        </button>
                     </div>
                     <button id="btn-logout" class="btn-outline" style="margin-left: 1rem;">
                         Esci
@@ -183,10 +179,6 @@
                     <h2 style="font-size: 2rem; margin-bottom: 0.5rem;">🛒 Lista della Spesa</h2>
                     <p class="text-muted">Ingredienti necessari per la tua settimana</p>
                 </div>
-                <button class="btn-outline" onclick="app.printShoppingList()">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-                    Stampa
-                </button>
             </div>
             <div id="shopping-list-container"></div>
         </section>
@@ -195,101 +187,14 @@
         <section id="view-profile" class="view hidden">
             <div id="profile-container"></div>
         </section>
-
-        <!-- Admin Section -->
-        <section id="view-admin" class="view hidden">
-            <div class="dashboard-header">
-                <h2 style="font-size: 2rem;">Gestione Ricette</h2>
-                <button class="btn-primary" onclick="admin.openRecipeModal()">+ Nuova Ricetta</button>
-            </div>
-            <div class="admin-table-container">
-                <table class="admin-table">
-                    <thead>
-                        <tr>
-                            <th>Nome</th>
-                            <th>Tipo</th>
-                            <th>Cals</th>
-                            <th>Veg/Vegan</th>
-                            <th>Azioni</th>
-                        </tr>
-                    </thead>
-                    <tbody id="admin-recipe-list"></tbody>
-                </table>
-            </div>
-        </section>
     </main>
 
     <!-- Recipe Details Modal -->
     <div id="recipe-modal" class="modal hidden">
         <div class="modal-overlay" onclick="app.closeModal()"></div>
         <div class="modal-content">
-            <button class="modal-close" onclick="app.closeModal()">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
+            <button class="modal-close" onclick="app.closeModal()" style="position:absolute; top:1rem; right:1rem; background:rgba(0,0,0,0.3); border:none; color:white; border-radius:50%; width:32px; height:32px; cursor:pointer; z-index:10;">✕</button>
             <div id="modal-body-content"></div>
-        </div>
-    </div>
-
-    <!-- Admin Recipe Editor Modal -->
-    <div id="admin-recipe-modal" class="modal hidden">
-        <div class="modal-overlay" onclick="admin.closeModal()"></div>
-        <div class="modal-content" style="max-width: 800px;">
-            <div class="recipe-body">
-                <h2 id="admin-modal-title">Modifica Ricetta</h2>
-                <form id="admin-recipe-form">
-                    <input type="hidden" id="admin-recipe-id">
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label>Nome Ricetta</label>
-                            <input type="text" id="admin-name" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Tipo Pasto</label>
-                            <select id="admin-type">
-                                <option value="breakfast">Colazione</option>
-                                <option value="lunch">Pranzo</option>
-                                <option value="dinner">Cena</option>
-                                <option value="snack">Spuntino</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Calorie Base</label>
-                            <input type="number" id="admin-calories" required>
-                        </div>
-                        <div class="form-group">
-                            <label>URL Immagine</label>
-                            <input type="url" id="admin-image">
-                        </div>
-                    </div>
-                    
-                    <div style="display:flex; gap:2rem; margin:1rem 0;">
-                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                            <input type="checkbox" id="admin-is-vegetarian"> Vegetariana
-                        </label>
-                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                            <input type="checkbox" id="admin-is-vegan"> Vegana
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Ingredienti (JSON format - Es: [{"name":"Pasta","amount":80,"unit":"g"}])</label>
-                        <textarea id="admin-ingredients" rows="4" required></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>Istruzioni (separate da nuova riga)</label>
-                        <textarea id="admin-instructions" rows="6" required></textarea>
-                    </div>
-                    <div class="form-grid">
-                        <div class="form-group"><label>Prot (g)</label><input type="number" id="admin-prot"></div>
-                        <div class="form-group"><label>Carbs (g)</label><input type="number" id="admin-carbs"></div>
-                        <div class="form-group"><label>Fat (g)</label><input type="number" id="admin-fat"></div>
-                    </div>
-                    <div style="display:flex; gap:1rem; margin-top:2rem;">
-                        <button type="submit" class="btn-primary">Salva Ricetta</button>
-                        <button type="button" class="btn-outline" onclick="admin.closeModal()">Annulla</button>
-                    </div>
-                </form>
-            </div>
         </div>
     </div>
 
