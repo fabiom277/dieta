@@ -114,6 +114,8 @@ async function handleOnboardingSubmit(e) {
 
         appState.user = profileData;
         appState.plan = plan;
+        currentUser = currentUser || { id: userId };
+        showView('dashboard');
         
     } catch (err) {
         if (errorEl) {
@@ -370,13 +372,13 @@ function openMealDetails(date, mealType) {
         </div>
     </div>`;
 
-    document.getElementById('modal-body-content').innerHTML = html;
-    document.getElementById('recipe-modal').classList.remove('hidden');
+    document.getElementById('meal-details').innerHTML = html;
+    document.getElementById('meal-modal').classList.remove('hidden');
     document.body.style.overflow = 'hidden';
 }
 
 function closeModal() {
-    document.getElementById('recipe-modal').classList.add('hidden');
+    document.getElementById('meal-modal').classList.add('hidden');
     document.body.style.overflow = 'auto';
 }
 
@@ -635,19 +637,56 @@ function renderShoppingList(forceGenerate = false) {
         });
     });
 
-    let html = `
-        <div class="ingredient-list">
-            ${Object.values(items).map(item => `
-                <div class="ingredient-item">
-                    <label style="display:flex; align-items:center; gap:0.75rem; cursor:pointer; flex: 1;">
-                        <input type="checkbox" class="ingredient-checkbox">
-                        <span style="line-height: 1.2;">${item.name}</span>
+    // ----- Categorize ingredients -----
+    const CATEGORIES = {
+        '🥩 Carne & Pesce':   ['pollo','manzo','salmone','tonno','merluzzo','tacchino','maiale','prosciutto','bresaola','speck','sgombro','gamberi','cozze','vongole','pesce','carne','filetto','bistecca','cotoletta','hamburger','wurstel'],
+        '🥛 Latticini & Uova': ['latte','panna','yogurt','burro','mozzarella','parmigiano','pecorino','ricotta','uova','uovo','formaggio','grana','emmental','stracchino','mascarpone','gorgonzola'],
+        '🍞 Pane & Cereali':   ['pane','pasta','riso','farro','orzo','avena','farina','semola','crackers','grissini','pancarré','pangrattato','polenta','lasagne','gnocchi','couscous','quinoa'],
+        '🫒 Condimenti & Grassi': ['olio','aceto','sale','pepe','zucchero','miele','salsa','maionese','ketchup','senape','dado','brodo','pesto','tahini','soia'],
+        '🌿 Spezie & Aromi':   ['aglio','cipolla','prezzemolo','basilico','rosmarino','origano','timo','menta','zenzero','curcuma','paprika','cannella','peperoncino','curry','alloro','salvia','erba'],
+        '🥫 Conserve & Scatolame': ['pomodori','passata','pelati','legumi','fagioli','ceci','lenticchie','mais','tonno in scatola','sardine','acciughe','olive','capperi','funghi secchi'],
+        '🫙 Frutta Secca & Semi': ['noci','mandorle','nocciole','pistacchi','anacardi','pinoli','semi di','sesamo','lino','girasole','chia','cocco'],
+        '🍎 Frutta':           ['mele','banane','arance','limone','lime','fragole','mirtilli','lamponi','pesche','pere','uva','kiwi','melone','anguria','ananas','avocado','mango'],
+        '🥦 Verdure':          ['spinaci','zucchine','carote','broccoli','cavolfiore','cavolo','melanzane','peperoni','pomodori freschi','lattuga','insalata','sedano','finocchio','asparagi','piselli','carciofi','radicchio','bietole','patate','cipollotti'],
+    };
+
+    function getCategory(name) {
+        const lower = name.toLowerCase();
+        for (const [cat, keywords] of Object.entries(CATEGORIES)) {
+            if (keywords.some(k => lower.includes(k))) return cat;
+        }
+        return '🛒 Altro';
+    }
+
+    // Group by category
+    const grouped = {};
+    Object.values(items).sort((a, b) => a.name.localeCompare(b.name)).forEach(item => {
+        const cat = getCategory(item.name);
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(item);
+    });
+
+    // Sort categories by predefined order
+    const catOrder = Object.keys(CATEGORIES).concat(['🛒 Altro']);
+    const sortedCats = catOrder.filter(c => grouped[c]);
+
+    let html = sortedCats.map(cat => `
+        <div style="margin-bottom: 2rem;">
+            <h4 style="font-size: 1rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.75rem; letter-spacing: 0.05em;">${cat}</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.6rem;">
+                ${grouped[cat].map(item => `
+                    <label style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 10px; padding: 0.65rem 0.9rem; cursor: pointer; transition: background 0.2s;">
+                        <span style="display: flex; align-items: center; gap: 0.5rem; min-width: 0;">
+                            <input type="checkbox" class="ingredient-checkbox" style="flex-shrink: 0;">
+                            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem;" title="${item.name}">${item.name}</span>
+                        </span>
+                        <span style="font-weight: 700; color: var(--accent-primary); white-space: nowrap; font-size: 0.9rem; flex-shrink: 0;">${Math.round(item.amount)} ${item.unit}</span>
                     </label>
-                    <span style="font-weight:700; color:var(--accent-primary); white-space: nowrap; margin-left: 1rem;">${Math.round(item.amount)} ${item.unit}</span>
-                </div>
-            `).join('')}
+                `).join('')}
+            </div>
         </div>
-    `;
+    `).join('');
+
     container.innerHTML = html;
 }
 
@@ -684,6 +723,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Safety timeout: hide loader after 10s even if something hangs
     setTimeout(hideLoader, 10000);
+
+    document.getElementById('btn-close-modal').onclick = closeModal;
+    document.getElementById('meal-modal').onclick = (e) => {
+        if (e.target === document.getElementById('meal-modal')) closeModal();
+    };
 
     document.getElementById('login-form').onsubmit = handleLoginSubmit;
     document.getElementById('onboarding-form').onsubmit = handleOnboardingSubmit;
