@@ -14,7 +14,7 @@
     <!-- Global Loader -->
     <div id="global-loader" style="position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg-primary); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999; transition: opacity 0.5s ease;">
         <div class="logo" style="margin-bottom:1rem;">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
             <h1 style="font-size:1.5rem;">NutriPlan</h1>
         </div>
         <p style="color:var(--text-muted); font-size:0.9rem;">Sincronizzazione in corso...</p>
@@ -24,7 +24,7 @@
         <div class="header-container">
             <div class="header-left">
                 <a href="#" class="logo" onclick="location.reload()">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
                     <h1>NutriPlan</h1>
                 </a>
             </div>
@@ -56,7 +56,7 @@
                 <h2 style="margin-bottom: 1.5rem;">Bentornato</h2>
                 <p class="text-muted" style="margin-bottom: 2rem;">Accedi con le tue credenziali per visualizzare il piano.</p>
 
-                <div id="auth-error" style="display:none; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #f87171; padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.9rem;"></div>
+                <div id="auth-error" class="error-box hidden"></div>
 
                 <form id="login-form">
                     <div class="form-group">
@@ -86,6 +86,8 @@
                     <h2>Iniziamo! 🥗</h2>
                     <p class="text-muted">Compila i dati per generare il tuo piano personalizzato.</p>
                 </div>
+
+                <div id="onboarding-error" class="error-box hidden"></div>
                 
                 <form id="onboarding-form">
                     <div class="form-grid">
