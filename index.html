@@ -2,16 +2,17 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NutriPlan - Mediterranean Diet Planner</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NutriPlan - Il tuo assistente alimentare</title>
+    <link rel="stylesheet" href="css/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=2.2">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Supabase Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/config.js"></script>
 </head>
-<body>
-    <!-- Global Loader -->
+<body class="dark-theme">
     <div id="global-loader" style="position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg-dark); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999;">
         <div class="logo" style="margin-bottom:1rem;">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -21,17 +22,28 @@
     </div>
 
     <header>
-        <div class="logo">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-            <h1>NutriPlan</h1>
+        <div class="header-container">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                <h1>NutriPlan</h1>
+            </div>
+            
+            <button id="mobile-menu-toggle" class="mobile-only" aria-label="Menu">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </button>
+
+            <nav id="main-nav" class="hidden">
+                <div class="nav-links">
+                    <button id="nav-dashboard" class="active">📅 Piano</button>
+                    <button id="nav-calendar">🗓️ Calendario</button>
+                    <button id="nav-shopping">🛒 Spesa</button>
+                    <button id="nav-profile">👤 Profilo</button>
+                </div>
+                <button id="btn-logout">Esci</button>
+            </nav>
         </div>
-        <nav id="main-nav" class="hidden">
-            <button id="nav-dashboard" class="active">Piano Settimanale</button>
-            <button id="nav-calendar">Calendario Mensile</button>
-            <button id="nav-shopping">Lista della Spesa</button>
-            <button id="nav-profile">Il Mio Profilo</button>
-            <button id="btn-logout" style="background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #f87171; padding: 0.4rem 0.9rem; border-radius: 8px; font-size: 0.85rem; cursor: pointer;">Esci</button>
-        </nav>
     </header>
 
     <main>
@@ -60,150 +72,138 @@
                 </form>
 
                 <!-- Form Registrazione -->
-                <form id="register-form" style="display:none;">
+                <form id="register-form" style="display:none">
                     <div class="form-group">
                         <input type="email" id="register-email" placeholder="Email" required autocomplete="email">
                     </div>
                     <div class="form-group">
-                        <input type="password" id="register-password" placeholder="Scegli una Password (min. 6 car.)" required autocomplete="new-password">
+                        <input type="password" id="register-password" placeholder="Scegli una password" required autocomplete="new-password">
                     </div>
                     <button type="submit" id="register-submit" class="btn btn-primary" style="width:100%">Crea Account</button>
-                    <p style="text-align:center; margin-top:1rem; font-size:0.8rem; color:var(--text-secondary);">
-                        Hai già un account? <a href="#" onclick="switchAuthTab('login')" style="color:var(--accent-primary)">Torna all'accesso</a>
-                    </p>
                 </form>
 
-                <p id="auth-loading" style="display:none; margin-top: 1rem; color: var(--text-muted);">⏳ Caricamento...</p>
+                <div id="auth-loading" style="display:none; margin-top:1rem;">
+                    <div class="spinner"></div>
+                </div>
             </div>
         </section>
 
         <!-- Onboarding View -->
         <section id="view-onboarding" class="view hidden">
-            <div class="glass-panel text-center">
-                <h2>Crea il tuo Piano Alimentare</h2>
-                <p>Rispondi a poche domande per permetterci di generare un piano perfetto per te, basato sul digiuno intermittente (colazione e pranzo).</p>
-                
+            <div class="glass-panel" style="max-width: 600px; margin: 0 auto;">
+                <h2 class="text-center">Personalizza il tuo Piano</h2>
                 <form id="onboarding-form" class="form-grid">
                     <div class="form-group">
                         <label for="age">Età</label>
-                        <input type="number" id="age" required min="18" max="100" placeholder="es. 30">
+                        <input type="number" id="age" required min="18" max="100">
                     </div>
                     <div class="form-group">
                         <label for="gender">Sesso</label>
-                        <select id="gender" required>
+                        <select id="gender">
                             <option value="male">Uomo</option>
                             <option value="female">Donna</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label for="weight">Peso (kg)</label>
-                        <input type="number" id="weight" required min="30" max="250" step="0.1" placeholder="es. 70">
+                        <input type="number" id="weight" step="0.1" required>
                     </div>
                     <div class="form-group">
                         <label for="height">Altezza (cm)</label>
-                        <input type="number" id="height" required min="100" max="250" placeholder="es. 175">
+                        <input type="number" id="height" required>
                     </div>
-                    <div class="form-group full-width">
-                        <label for="activity">Livello di Attività</label>
-                        <select id="activity" required>
-                            <option value="1.2">Sedentario (poco o nessun esercizio)</option>
-                            <option value="1.375">Leggero (esercizio leggero 1-3 giorni/settimana)</option>
-                            <option value="1.55">Moderato (esercizio moderato 3-5 giorni/settimana)</option>
-                            <option value="1.725">Attivo (esercizio intenso 6-7 giorni/settimana)</option>
+                    <div class="form-group">
+                        <label for="activity">Attività Fisica</label>
+                        <select id="activity">
+                            <option value="1.2">Sedentario</option>
+                            <option value="1.375">Leggero (1-2 volte/sett)</option>
+                            <option value="1.55">Moderato (3-4 volte/sett)</option>
+                            <option value="1.725">Attivo (5+ volte/sett)</option>
                         </select>
                     </div>
-                    <div class="form-group full-width">
+                    <div class="form-group">
                         <label for="goal">Obiettivo</label>
-                        <select id="goal" required>
-                            <option value="lose">Perdita di peso (deficit calorico)</option>
-                            <option value="maintain">Mantenimento</option>
-                            <option value="gain">Aumento massa (surplus calorico)</option>
+                        <select id="goal">
+                            <option value="lose">Perdere Peso</option>
+                            <option value="maintain">Mantenere Peso</option>
+                            <option value="gain">Aumentare Massa</option>
                         </select>
                     </div>
-                    <div class="form-group full-width">
-                        <label for="dislikes">Cibi non graditi (separati da virgola)</label>
-                        <input type="text" id="dislikes" placeholder="es. broccoli, funghi, salmone">
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <label for="dislikes">Cibi che non ti piacciono (separati da virgola)</label>
+                        <input type="text" id="dislikes" placeholder="es. funghi, cipolla, pesce">
                     </div>
-                    
-                    <div class="form-actions full-width">
-                        <button type="submit" class="btn btn-primary">Genera Piano Mensile</button>
-                    </div>
+                    <button type="submit" class="btn btn-primary" style="grid-column: 1 / -1; margin-top: 1rem;">Genera la mia Dieta</button>
                 </form>
             </div>
         </section>
 
         <!-- Dashboard View -->
         <section id="view-dashboard" class="view hidden">
-            <div class="dashboard-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <div>
-                    <h2>Il tuo Piano Settimanale</h2>
-                    <p id="caloric-info">Fabbisogno calcolato: <span class="highlight">-- kcal</span>/giorno</p>
-                </div>
-            </div>
-
-            <div class="calendar-grid" id="calendar-grid">
-                <!-- Days will be injected here -->
-            </div>
-
-        </section>
-
-        <!-- Monthly Calendar View -->
-        <section id="view-calendar" class="view hidden">
-            <h2 class="text-center" style="margin-bottom: 2rem;">Calendario Storico</h2>
-            <div id="monthly-calendar-container" style="padding: 0.5rem; overflow-x: auto; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid var(--glass-border);">
-                <!-- monthly-calendar-grid injected here -->
-            </div>
-        </section>
-
-        <!-- Shopping List View -->
-        <section id="view-shopping" class="view hidden">
             <div class="dashboard-header">
-                <h2>Lista della Spesa</h2>
-                <div class="shopping-controls">
-                    <button class="btn btn-primary" id="generate-shopping">Genera Lista Selezionata</button>
+                <div>
+                    <h2 style="font-size: 2rem; letter-spacing: -0.02em;">Il tuo Piano Settimanale</h2>
+                    <p id="caloric-info">Caricamento fabbisogno...</p>
                 </div>
             </div>
             
-            <div class="glass-panel" style="margin-bottom: 2rem;">
-                <h3 style="margin-bottom: 1rem;">Seleziona i giorni per cui vuoi fare la spesa:</h3>
-                <div id="shopping-days-selector" style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                    <!-- Popolato dinamicamente da app.js -->
-                </div>
-            </div>
-
-            <div class="glass-panel">
-                <div id="shopping-list-content">
-                    <p class="text-center text-muted">Seleziona i giorni e clicca "Genera Lista" per vedere gli ingredienti.</p>
-                </div>
+            <div id="calendar-grid" class="calendar-grid">
+                <!-- Days populated by JS -->
             </div>
         </section>
 
+        <!-- Calendar View (Monthly) -->
+        <section id="view-calendar" class="view hidden">
+            <div class="dashboard-header" style="justify-content: center; margin-bottom: 2rem;">
+                <h2 style="font-size: 2rem; letter-spacing: -0.02em;">Calendario Storico</h2>
+            </div>
+            <div id="monthly-calendar-container"></div>
+        </section>
+
+        <!-- Shopping View -->
+        <section id="view-shopping" class="view hidden">
+            <div class="glass-panel">
+                <h2 class="text-center" style="margin-bottom: 2rem;">Lista della Spesa</h2>
+                
+                <div style="margin-bottom: 2rem; text-align:center;">
+                    <p style="margin-bottom:1rem; color:var(--text-secondary);">Seleziona i giorni per cui fare la spesa:</p>
+                    <div id="shopping-days-selector" style="display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; margin-bottom: 1.5rem;"></div>
+                    <button id="generate-shopping" class="btn btn-primary">Aggiorna Lista</button>
+                </div>
+
+                <div id="shopping-list-content">
+                    <p class="text-center text-muted">Seleziona i giorni e premi "Aggiorna Lista" per iniziare.</p>
+                </div>
+            </div>
+        </section>
 
         <!-- Profile View -->
         <section id="view-profile" class="view hidden">
-            <div class="glass-panel" style="max-width: 600px; margin: 0 auto;">
-                <h2 style="margin-bottom: 1.5rem;">Il Mio Profilo</h2>
+            <div class="glass-panel" style="max-width: 700px; margin: 0 auto;">
+                <h2 style="margin-bottom: 2rem;">Il Mio Profilo</h2>
+                
                 <div id="profile-data" style="margin-bottom: 2rem;"></div>
+
                 <div style="display: flex; flex-direction: column; gap: 1rem;">
-                    <button id="btn-regenerate" class="btn btn-primary">🔄 Rigenera Piano Settimanale</button>
-                    <button id="btn-reset" class="btn" style="background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #f87171;">⚠️ Cambia Profilo (Reset)</button>
+                    <button id="btn-regenerate" class="btn" style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--accent-primary); color: var(--accent-primary);">🔄 Rigenera Piano Settimanale</button>
+                    <button id="btn-reset" class="btn" style="background: rgba(255, 255, 255, 0.05); color: var(--text-muted); font-size: 0.85rem;">Cambia Profilo (Reset)</button>
                 </div>
             </div>
         </section>
-
     </main>
 
+    <!-- Meal Detail Modal -->
     <div id="meal-modal" class="modal hidden">
-        <div class="modal-content">
-            <button class="close-modal" id="btn-close-modal">&times;</button>
-            <div id="meal-details">
-                <!-- Meal details injected here -->
+        <div class="modal-content glass-panel">
+            <button id="btn-close-modal" class="close-btn">&times;</button>
+            <div id="meal-details" class="recipe-container">
+                <!-- Detailed by JS -->
             </div>
         </div>
     </div>
 
-    <script src="js/supabase-client.js?v=2.1"></script>
-    <script src="js/nutrition.js?v=2.1"></script>
-    <script src="js/app.js?v=2.1"></script>
+    <!-- Scripts -->
+    <script src="js/nutrition.js"></script>
+    <script src="js/app.js"></script>
 </body>
 </html>

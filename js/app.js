@@ -317,8 +317,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const onboardingForm = document.getElementById('onboarding-form');
     if (onboardingForm) onboardingForm.addEventListener('submit', handleOnboardingSubmit);
+
+    // Mobile Menu Toggle
+    const menuToggle = document.getElementById('mobile-menu-toggle');
+    const mainNavEl = document.getElementById('main-nav');
+    if (menuToggle && mainNavEl) {
+        menuToggle.addEventListener('click', () => {
+            menuToggle.classList.toggle('open');
+            mainNavEl.classList.toggle('mobile-active');
+        });
+    }
 });
 
+function toggleMobileMenu(forceClose = false) {
+    const menuToggle = document.getElementById('mobile-menu-toggle');
+    const mainNavEl = document.getElementById('main-nav');
+    if (menuToggle && mainNavEl) {
+        if (forceClose) {
+            menuToggle.classList.remove('open');
+            mainNavEl.classList.remove('mobile-active');
+        } else {
+            menuToggle.classList.toggle('open');
+            mainNavEl.classList.toggle('mobile-active');
+        }
+    }
+}
+
+/**
+ * Funzione di emergenza per resettare l'app se bloccata (utilizzabile dalla console o link)
+ */
 async function resetAppSession() {
     await _supabase.auth.signOut();
     localStorage.clear();
@@ -383,6 +410,9 @@ function setupEventListeners() {
 // ============================================================
 
 function showView(viewName) {
+    // Chiudi il menu mobile se aperto
+    toggleMobileMenu(true);
+
     const allViews = ['view-auth','view-onboarding','view-dashboard','view-shopping','view-profile','view-calendar'];
     allViews.forEach(id => {
         const el = document.getElementById(id);
