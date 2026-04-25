@@ -515,17 +515,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     initDomRefs();
 
     _supabase.auth.onAuthStateChange(async (event, session) => {
-        if (session) {
-            currentUser = session.user;
-            await fetchRecipesFromSupabase();
-            const hasProfile = await loadFromCloud();
-            if (hasProfile) showView('dashboard');
-            else showView('onboarding');
-        } else {
+        try {
+            if (session) {
+                currentUser = session.user;
+                await fetchRecipesFromSupabase();
+                const hasProfile = await loadFromCloud();
+                if (hasProfile) showView('dashboard');
+                else showView('onboarding');
+            } else {
+                showView('auth');
+            }
+        } catch (err) {
+            console.error("Initialization error:", err);
             showView('auth');
+        } finally {
+            hideLoader();
         }
-        hideLoader();
     });
+
+    // Safety timeout: hide loader after 10s even if something hangs
+    setTimeout(hideLoader, 10000);
 
     document.getElementById('login-form').onsubmit = handleLoginSubmit;
     document.getElementById('onboarding-form').onsubmit = handleOnboardingSubmit;
