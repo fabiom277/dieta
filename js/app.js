@@ -7,12 +7,16 @@ let recipesLoaded = false;
 
 
 // --- DOM REFS ---
-const navDashboard = document.getElementById('nav-dashboard');
-const navShopping  = document.getElementById('nav-shopping');
-const viewOnboarding = document.getElementById('view-onboarding');
-const viewDashboard  = document.getElementById('view-dashboard');
-const viewShopping   = document.getElementById('view-shopping');
-const mainNav = document.getElementById('main-nav');
+let navDashboard, navShopping, viewOnboarding, viewDashboard, viewShopping, mainNav;
+
+function initDomRefs() {
+    navDashboard = document.getElementById('nav-dashboard');
+    navShopping  = document.getElementById('nav-shopping');
+    viewOnboarding = document.getElementById('view-onboarding');
+    viewDashboard  = document.getElementById('view-dashboard');
+    viewShopping   = document.getElementById('view-shopping');
+    mainNav = document.getElementById('main-nav');
+}
 
 // ============================================================
 // AUTH HELPERS
@@ -265,6 +269,8 @@ function ensurePlanCoversWindow() {
 document.addEventListener('DOMContentLoaded', () => {
     console.log("NutriPlan: App Inizializzata (DOM Ready)");
     
+    initDomRefs();
+
     // Fallback di sicurezza: rimuove SEMPRE il loader globale dopo 4 secondi.
     setTimeout(() => {
         const loader = document.getElementById('global-loader');
