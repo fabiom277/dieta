@@ -1,5 +1,3 @@
-// --- NUTRITION LOGIC ---
-
 // Global recipe pools (populated from Supabase)
 let recipesDB = [];
 let snacksDB = [];
@@ -7,6 +5,13 @@ let snacksDB = [];
 // Esporta globalmente per visibilità tra script
 window.recipesDB = recipesDB;
 window.snacksDB = snacksDB;
+window.calculateBMI = calculateBMI;
+window.calculateBMR = calculateBMR;
+window.calculateTDEE = calculateTDEE;
+window.calculateTargetCalories = calculateTargetCalories;
+window.generateMonthlyPlan = generateMonthlyPlan;
+window.findAlternativeMeal = findAlternativeMeal;
+window.getTodayISO = getTodayISO;
 
 function getTodayISO() {
     return new Date().toISOString().slice(0, 10);
@@ -78,15 +83,24 @@ function getSafeRecipes(profile, pool) {
     }
 
     // Filtro Dislikes
-    if (!dislikesStr || dislikesStr.trim() === '') return filtered;
-
-    const dislikes = dislikesStr.toLowerCase().split(',').map(d => d.trim()).filter(d => d.length > 0);
+    if (!dislikesStr) return filtered;
+    
+    let dislikes = [];
+    if (Array.isArray(dislikesStr)) {
+        dislikes = dislikesStr.map(d => d.toLowerCase().trim());
+    } else if (typeof dislikesStr === 'string' && dislikesStr.trim() !== '') {
+        dislikes = dislikesStr.toLowerCase().split(',').map(d => d.trim()).filter(d => d.length > 0);
+    } else {
+        return filtered;
+    }
     
     return filtered.filter(recipe => {
         const nameMatch = dislikes.some(d => recipe.name.toLowerCase().includes(d));
         if (nameMatch) return false;
-        const ingMatch = recipe.ingredients.some(ing => dislikes.some(d => ing.name.toLowerCase().includes(d)));
-        if (ingMatch) return false;
+        if (recipe.ingredients) {
+            const ingMatch = recipe.ingredients.some(ing => dislikes.some(d => ing.name.toLowerCase().includes(d)));
+            if (ingMatch) return false;
+        }
         return true;
     });
 }

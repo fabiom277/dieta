@@ -1,493 +1,603 @@
-// --- APP STATE ---
-let appState = { user: null, plan: [] };
-let currentUser = null; 
-let saveTimeout = null;
-let sessionSkippedIds = []; 
-let recipesLoaded = false;
+// State
+let currentUser = null;
+let appState = {
+    user: null,
+    plan: [],
+    recipes: []
+};
 
-// --- UTILS ---
-function hideLoader() {
-    const loader = document.getElementById('global-loader');
-    if (loader) {
-        loader.style.opacity = '0';
-        setTimeout(() => {
-            loader.style.display = 'none';
-        }, 500);
-    }
-}
-
-// --- DOM REFS ---
-let mainNav;
+// DOM Refs
+let views = {};
+let navButtons = {};
+let loader = null;
 
 function initDomRefs() {
-    mainNav = document.getElementById('main-nav');
+    loader = document.getElementById('global-loader');
+    ['auth', 'onboarding', 'dashboard', 'calendar', 'shopping', 'profile'].forEach(v => {
+        views[v] = document.getElementById(\`view-\${v}\`);
+    });
+    ['dashboard', 'calendar', 'shopping', 'profile'].forEach(n => {
+        navButtons[n] = document.getElementById(\`nav-\${n}\`);
+    });
+}
+
+function showLoader() { if (loader) loader.style.display = 'flex'; }
+function hideLoader() { if (loader) loader.style.display = 'none'; }
+
+function showView(viewName) {
+    Object.values(views).forEach(v => v?.classList.add('hidden'));
+    views[viewName]?.classList.remove('hidden');
+
+    Object.values(navButtons).forEach(b => b?.classList.remove('active'));
+    navButtons[viewName]?.classList.add('active');
+
+    const nav = document.getElementById('main-nav');
+    if (viewName === 'auth' || viewName === 'onboarding') {
+        nav?.classList.add('hidden');
+    } else {
+        nav?.classList.remove('hidden');
+    }
+
+    if (viewName === 'dashboard') renderDashboard();
+    if (viewName === 'calendar') renderMonthlyCalendar();
+    if (viewName === 'shopping') renderShoppingDaySelector();
+    if (viewName === 'profile') renderProfile();
+    
+    window.scrollTo(0, 0);
 }
 
 // ============================================================
-// AUTH
+// AUTH & SYNC
 // ============================================================
 
 async function handleLoginSubmit(e) {
     e.preventDefault();
     const email = document.getElementById('login-email').value;
     const password = document.getElementById('login-password').value;
-    const errorEl = document.getElementById('auth-error');
-    const submitBtn = document.getElementById('login-submit');
+    const errorBox = document.getElementById('auth-error');
+    
+    errorBox.classList.add('hidden');
+    showLoader();
 
-    errorEl.classList.add('hidden');
-    submitBtn.disabled = true;
-    submitBtn.innerText = 'Accesso in corso...';
-
-    try {
-        const { error } = await _supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-    } catch (err) {
-        errorEl.innerText = "Errore: " + err.message;
-        errorEl.classList.remove('hidden');
-        submitBtn.disabled = false;
-        submitBtn.innerText = 'Accedi';
+    const { data, error } = await _supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+        errorBox.textContent = "Errore: " + error.message;
+        errorBox.classList.remove('hidden');
+        hideLoader();
     }
 }
 
 async function handleOnboardingSubmit(e) {
     e.preventDefault();
-    const submitBtn = e.target.querySelector('button[type="submit"]');
-    const originalText = submitBtn.innerText;
-    
-    // Account Data
+    const errorBox = document.getElementById('onboarding-error');
+    errorBox.classList.add('hidden');
+    showLoader();
+
     const email = document.getElementById('reg-email').value;
     const password = document.getElementById('reg-password').value;
 
-    // Profile Data
-    const profileData = {
-        gender: document.getElementById('gender').value,
+    // 1. Create Auth User
+    const { data: authData, error: authError } = await _supabase.auth.signUp({ email, password });
+    
+    if (authError) {
+        if (authError.message.includes("already registered")) {
+            // Se già registrato, proviamo a loggare
+            const { error: logError } = await _supabase.auth.signInWithPassword({ email, password });
+            if (logError) {
+                errorBox.textContent = "Account esistente ma password errata.";
+                errorBox.classList.remove('hidden');
+                hideLoader();
+                return;
+            }
+        } else {
+            errorBox.textContent = authError.message;
+            errorBox.classList.remove('hidden');
+            hideLoader();
+            return;
+        }
+    }
+
+    // 2. Prepare Profile
+    const profile = {
         age: parseInt(document.getElementById('age').value),
+        gender: document.getElementById('gender').value,
         weight: parseFloat(document.getElementById('weight').value),
         height: parseInt(document.getElementById('height').value),
-        activity_level: parseFloat(document.getElementById('activity').value),
+        activity: parseFloat(document.getElementById('activity').value),
         goal: document.getElementById('goal').value,
         diet_type: document.getElementById('diet-type').value,
         eating_pattern: document.getElementById('eating-pattern').value,
-        dislikes: document.getElementById('dislikes').value
+        dislikes: document.getElementById('dislikes').value,
+        bannedRecipeIds: []
     };
 
-    const errorEl = document.getElementById('onboarding-error');
-    if (errorEl) errorEl.classList.add('hidden');
-    submitBtn.disabled = true;
-    submitBtn.innerText = 'Elaborazione...';
+    const bmr = calculateBMR(profile.weight, profile.height, profile.age, profile.gender);
+    const tdee = calculateTDEE(bmr, profile.activity);
+    profile.targetCalories = calculateTargetCalories(tdee, profile.goal);
 
-    try {
-        let userId = currentUser?.id;
+    appState.user = profile;
+    appState.plan = generateMonthlyPlan(profile);
 
-        // 1. Handle Auth
-        if (!userId) {
-            const { data: authData, error: authError } = await _supabase.auth.signUp({ 
-                email, 
-                password,
-                options: { data: { first_setup: true } }
-            });
-
-            if (authError) {
-                // If user already exists, try to log in instead
-                if (authError.message.toLowerCase().includes('already registered') || authError.status === 400) {
-                    const { data: signInData, error: signInError } = await _supabase.auth.signInWithPassword({ email, password });
-                    if (signInError) throw new Error("Utente già registrato con questa email. Prova ad accedere o usa un'altra email.");
-                    userId = signInData.user.id;
-                } else {
-                    throw authError;
-                }
-            } else if (!authData.user) {
-                throw new Error("Impossibile creare l'account.");
-            } else {
-                userId = authData.user.id;
-            }
-        }
-
-        // 2. Prepare Data
-        if (!recipesLoaded) await fetchRecipesFromSupabase();
-        
-        const bmr = calculateBMR(profileData.weight, profileData.height, profileData.age, profileData.gender);
-        const tdee = calculateTDEE(bmr, profileData.activity_level);
-        profileData.targetCalories = calculateTargetCalories(tdee, profileData.goal);
-        
-        const bmiInfo = calculateBMI(profileData.weight, profileData.height);
-        profileData.bmi = bmiInfo.bmi;
-        profileData.bmiCategory = bmiInfo.category;
-        
-        const plan = generateMonthlyPlan(profileData);
-
-        // 3. Save to user_data
-        const { error: dbError } = await _supabase.from('user_data').upsert({
-            id: userId,
-            nutrition_profile: profileData,
-            meal_plan: plan,
-            updated_at: new Date().toISOString()
-        });
-
-        if (dbError) throw dbError;
-
-        appState.user = profileData;
-        appState.plan = plan;
-        currentUser = currentUser || { id: userId };
-        
-        // Final verification of recipes
-        if (!appState.plan || appState.plan.length === 0 || !appState.plan[0].meals.lunch) {
-             console.warn("Piano generato vuoto, riprovando...");
-             appState.plan = generateMonthlyPlan(profileData);
-             await saveToCloud();
-        }
-
-        showView('dashboard');
-        
-    } catch (err) {
-        console.error("Onboarding error:", err);
-        if (errorEl) {
-            let msg = err.message || "Qualcosa è andato storto.";
-            if (msg.toLowerCase().includes('already registered')) {
-                msg = "Questa email è già registrata. <a href='#' onclick='app.showView(\"auth\")' style='color:var(--accent-primary); font-weight:700;'>Clicca qui per accedere</a>.";
-            }
-            errorEl.innerHTML = "Errore: " + msg;
-            errorEl.classList.remove('hidden');
-        } else {
-            alert("Errore: " + err.message);
-        }
-        submitBtn.disabled = false;
-        submitBtn.innerText = originalText;
-    }
+    await saveToCloud();
+    showView('dashboard');
+    hideLoader();
 }
 
-// ============================================================
-// DATA LOADING
-// ============================================================
-
 async function fetchRecipesFromSupabase() {
-    try {
-        const { data, error } = await _supabase.from('recipes').select('*');
-        if (error) throw error;
-        
-        const normalized = data.map(r => ({
-            ...r,
-            baseCalories: r.base_calories,
-            imageUrl: r.image_url,
-            sourceUrl: r.source_url
-        }));
-
-        recipesDB = normalized.filter(r => r.type !== 'snack');
-        snacksDB = normalized.filter(r => r.type === 'snack');
-        recipesLoaded = true;
-        return true;
-    } catch (err) {
-        console.error("Fetch error:", err);
-        return false;
+    const { data, error } = await _supabase.from('recipes').select('*');
+    if (!error && data) {
+        recipesDB.length = 0;
+        snacksDB.length = 0;
+        data.forEach(r => {
+            if (r.type === 'snack') snacksDB.push(r);
+            else recipesDB.push(r);
+        });
     }
 }
 
 async function saveToCloud() {
     if (!currentUser) return;
-    await _supabase.from('user_data').upsert({
+    const { error } = await _supabase.from('profiles').upsert({
         id: currentUser.id,
-        nutrition_profile: appState.user,
-        meal_plan: appState.plan,
-        updated_at: new Date().toISOString()
+        profile_data: appState.user,
+        plan_data: appState.plan,
+        updated_at: new Date()
     });
-}
-
-function debouncedSave() {
-    clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(saveToCloud, 1000);
+    if (error) console.error("Cloud Save Error:", error);
 }
 
 async function loadFromCloud() {
-    if (!currentUser) return false;
-    const { data, error } = await _supabase.from('user_data').select('*').eq('id', currentUser.id).single();
-    if (error || !data) return false;
-    appState.user = data.nutrition_profile;
-    appState.plan = data.meal_plan || [];
-    return true;
+    const { data, error } = await _supabase.from('profiles').select('*').eq('id', currentUser.id).single();
+    if (!error && data) {
+        appState.user = data.profile_data;
+        appState.plan = data.plan_data || [];
+        return true;
+    }
+    return false;
 }
 
-// ============================================================
-// NAVIGATION & VIEWS
-// ============================================================
-
-function showView(viewName) {
-    const views = ['auth', 'onboarding', 'dashboard', 'shopping', 'profile', 'calendar', 'admin'];
-    views.forEach(v => {
-        const el = document.getElementById(`view-${v}`);
-        if (el) el.classList.add('hidden');
-    });
-
-    const target = document.getElementById(`view-${viewName}`);
-    if (target) target.classList.remove('hidden');
-
-    // Hide account section if already logged in (e.g. during profile reset)
-    const accountSection = document.querySelector('#onboarding-form div[style*="border-top"]');
-    if (accountSection) {
-        if (currentUser) {
-            accountSection.classList.add('hidden');
-            document.getElementById('reg-email').required = false;
-            document.getElementById('reg-password').required = false;
-        } else {
-            accountSection.classList.remove('hidden');
-            document.getElementById('reg-email').required = true;
-            document.getElementById('reg-password').required = true;
-        }
-    }
-
-    if (viewName === 'dashboard') renderDashboard();
-    if (viewName === 'calendar') renderMonthlyCalendar();
-    if (viewName === 'shopping') {
-        setupShoppingDaysSelector();
-        renderShoppingList();
-    }
-    if (viewName === 'profile') renderProfile();
-    if (viewName === 'admin') admin.init();
-
-    // Toggle menu visibility
-    if (['auth', 'onboarding'].includes(viewName)) {
-        document.getElementById('main-nav').classList.add('hidden');
-    } else {
-        document.getElementById('main-nav').classList.remove('hidden');
-        
-        // Update active state of nav buttons
-        document.querySelectorAll('.nav-links button').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        const activeBtn = document.getElementById(`nav-${viewName}`);
-        if (activeBtn) activeBtn.classList.add('active');
-    }
-    
-    // Close mobile menu if open
-    document.getElementById('main-nav').classList.remove('mobile-active');
-}
+const debouncedSave = (() => {
+    let timeout;
+    return () => {
+        clearTimeout(timeout);
+        timeout = setTimeout(saveToCloud, 2000);
+    };
+})();
 
 // ============================================================
-// DASHBOARD
+// CORE LOGIC & RENDERING
 // ============================================================
 
 function renderDashboard() {
-    const container = document.getElementById('view-dashboard');
-    if (!container) return;
+    const container = document.getElementById('calendar-grid');
+    const today = getTodayISO();
     
-    if (!appState.plan || appState.plan.length === 0) {
-        container.innerHTML = `
-            <div class="dashboard-header">
-                <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;">Benvenuto! 👋</h1>
-            </div>
-            <div class="glass-panel text-center" style="padding: 3rem;">
-                <h3 style="margin-bottom:1rem; color:var(--text-secondary);">Nessun piano alimentare generato.</h3>
-                <p style="margin-bottom: 2rem;">Compila il tuo profilo per iniziare.</p>
-                <button class="btn btn-primary" onclick="app.showView('onboarding')">Crea il tuo profilo</button>
-            </div>
-        `;
+    // Mostriamo solo i prossimi 7 giorni a partire da oggi
+    const displayPlan = appState.plan.filter(p => p.date >= today).slice(0, 7);
+
+    if (displayPlan.length === 0) {
+        container.innerHTML = '<div class="glass-panel text-center"><p>Nessun piano trovato. Rigeneralo dal profilo.</p></div>';
         return;
     }
 
-    const today = getTodayISO();
-    const visiblePlan = appState.plan.filter(p => p.date >= today).slice(0, 7);
+    const caloricInfo = document.getElementById('caloric-info');
+    if (caloricInfo) caloricInfo.innerHTML = \`Fabbisogno: <span class="highlight">\${appState.user.targetCalories} kcal</span>/giorno\`;
 
-    const confirmedMeals = visiblePlan.reduce((acc, day) => acc + Object.values(day.meals).filter(m => m.confirmed).length, 0);
-    const totalPotentialMeals = visiblePlan.length * 4; 
-    const weeklyProgress = (confirmedMeals / totalPotentialMeals) * 100;
-
-    let html = `
-        <div class="dashboard-header" style="margin-bottom: 3rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 2rem;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 1rem;">
-                <div>
-                    <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem; letter-spacing: -0.03em;">Il Tuo Piano <span class="highlight">Settimanale</span></h1>
-                    <p class="text-muted" style="font-size: 1.1rem;">Settimana del ${new Date(visiblePlan[0].date).toLocaleDateString('it-IT', { day: 'numeric', month: 'long' })}</p>
-                </div>
-                <div style="text-align: right; min-width: 200px;">
-                    <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 0.5rem;">Obiettivo Settimanale: ${confirmedMeals}/${totalPotentialMeals} Pasti</div>
-                    <div class="progress-container" style="margin: 0;">
-                        <div class="progress-fill" style="width: ${weeklyProgress}%"></div>
-                    </div>
-                </div>
-            </div>
-            
-            <div style="display: flex; gap: 1.5rem; margin-top: 2rem; align-items: center; flex-wrap: wrap;">
-                <div style="background: rgba(16, 185, 129, 0.1); padding: 0.6rem 1.2rem; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.2); font-weight: 700; color: var(--accent-primary); display: flex; align-items: center; gap: 0.5rem;">
-                    <span style="font-size: 1.2rem;">🎯</span> \${appState.user.targetCalories} kcal / giorno
-                </div>
-                <div style="background: rgba(255, 255, 255, 0.05); padding: 0.6rem 1.2rem; border-radius: 12px; border: 1px solid var(--glass-border); font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; gap: 0.5rem;">
-                    <span style="font-size: 1.2rem;">🥗</span> Dieta: \${appState.user.diet_type || 'Standard'}
-                </div>
-            </div>
-        </div>
-    `;
-
-    html += \`<div class="calendar-grid" style="display: flex; flex-direction: column; gap: 2.5rem;">\`;
-
-    visiblePlan.forEach(day => {
-        let totalCals = 0;
-        Object.values(day.meals).forEach(m => totalCals += (m.calories || 0));
+    container.innerHTML = displayPlan.map(day => {
+        const d = new Date(day.date);
+        const dayLabel = d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'short' });
         const isToday = day.date === today;
 
-        html += \`
-            <div class="day-section" style="\${isToday ? 'background: rgba(16, 185, 129, 0.03); border-radius: 20px; padding: 1.5rem; border: 1px solid rgba(16, 185, 129, 0.1);' : ''}">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
-                    <h2 style="text-transform:capitalize; font-size: 1.5rem; display: flex; align-items: center; gap: 0.75rem;">
-                        \${isToday ? '<span style="background: var(--accent-primary); color: #fff; font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; vertical-align: middle;">OGGI</span>' : ''}
-                        \${new Date(day.date + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'short' })}
-                    </h2>
-                    <span style="font-weight:800; font-size: 1.2rem; color: var(--text-secondary); opacity: 0.8;">\${Math.round(totalCals)} <span style="font-size: 0.8rem; font-weight: 500;">kcal totali</span></span>
+        return \`
+            <div class="day-card \${isToday ? 'today' : ''} \${day.confirmed ? 'confirmed' : ''}">
+                <div class="day-header">
+                    <h3>\${dayLabel.toUpperCase()}</h3>
+                    <span class="day-kcal">\${calculateDayCals(day)} kcal</span>
                 </div>
-                <div class="meals-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem;">
-                    \${renderMealSlot(day.date, 'breakfast', day.meals.breakfast)}
-                    \${renderMealSlot(day.date, 'snack', day.meals.snack)}
-                    \${renderMealSlot(day.date, 'lunch', day.meals.lunch)}
-                    \${renderMealSlot(day.date, 'dinner', day.meals.dinner)}
+                \${Object.entries(day.meals).map(([slot, meal]) => renderMealCard(day.date, slot, meal)).join('')}
+                <div class="day-footer">
+                    \${day.confirmed 
+                        ? \`<button class="btn-unlock-day" onclick="confirmDay('\${day.date}', false)">Sblocca Giorno</button>\`
+                        : \`<button class="btn-confirm-day" onclick="confirmDay('\${day.date}', true)">Conferma Giorno</button>\`
+                    }
                 </div>
             </div>
         \`;
-    });
-
-    html += \`</div>\`;
-    container.innerHTML = html;
+    }).join('');
 }
 
-function renderMealSlot(date, type, meal) {
+function calculateDayCals(day) {
+    return Object.values(day.meals).reduce((sum, m) => sum + (m.calories || 0), 0);
+}
+
+function renderMealCard(date, slot, meal) {
     if (!meal) return '';
-    const labels = { breakfast: 'Colazione', snack: 'Spuntino', lunch: 'Pranzo', dinner: 'Cena' };
+    const slotNames = { breakfast: 'Colazione', snack: 'Spuntino', lunch: 'Pranzo', dinner: 'Cena' };
     
     return \`
-        <div class="meal-card" onclick="openMealDetails('\${date}', '\${type}')" style="background: var(--glass-bg); border: 1px solid var(--glass-border); padding: 1.5rem; border-radius: 16px; transition: all 0.2s ease; position: relative; overflow: hidden;">
-            <div class="meal-tag" style="font-size: 0.7rem; color: var(--accent-primary); font-weight: 800; margin-bottom: 0.75rem; letter-spacing: 0.05em;">\${labels[type].toUpperCase()}</div>
-            <h3 style="margin-bottom:0.75rem; font-size:1.15rem; line-height: 1.3; font-weight: 700;">\${meal.name}</h3>
-            
-            \${meal.smartAddition ? \`<div class="smart-addition-tag" style="background: rgba(59, 130, 246, 0.1); color: #60a5fa; font-size: 0.75rem; padding: 4px 8px; border-radius: 6px; margin-bottom: 1rem; border: 1px solid rgba(59, 130, 246, 0.1);">+ \${meal.smartAddition.amount}\${meal.smartAddition.unit} \${meal.smartAddition.name}</div>\` : ''}
-            
-            <div style="display:flex; gap:1.25rem; margin-top:auto; font-size:0.85rem; font-weight: 600; color: var(--text-secondary);">
-                <span>🔥 \${Math.round(meal.calories)} <span style="font-size: 0.7rem; opacity: 0.7;">kcal</span></span>
-                <span>🥩 \${Math.round(meal.macros.protein * (meal.portion || 1))}g <span style="font-size: 0.7rem; opacity: 0.7;">pro</span></span>
-            </div>
-
-            <div style="display:flex; gap:0.5rem; margin-top:1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05);">
-                <button class="btn-swap" style="flex: 1; background: \${meal.confirmed ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.05)'}; color: \${meal.confirmed ? 'var(--accent-primary)' : 'var(--text-primary)'}; border: 1px solid \${meal.confirmed ? 'rgba(16, 185, 129, 0.3)' : 'var(--glass-border)'}; padding: 0.5rem; border-radius: 8px; font-size: 0.8rem; font-weight: 700; cursor: pointer;" onclick="event.stopPropagation(); confirmMeal('\${date}', '\${type}')">
-                    \${meal.confirmed ? '✓ Confermata' : 'Conferma'}
-                </button>
-                <button class="btn-swap" style="background: rgba(255,255,255,0.05); color: var(--text-secondary); border: 1px solid var(--glass-border); padding: 0.5rem 0.75rem; border-radius: 8px; font-size: 0.8rem; cursor: pointer;" onclick="event.stopPropagation(); swapMeal('\${date}', '\${type}')">🔄</button>
+        <div class="meal-card" onclick="openMealDetails('\${date}', '\${slot}')">
+            <div class="meal-tag">\${slotNames[slot]}</div>
+            <div class="meal-name">\${meal.name}</div>
+            <div class="meal-macros">
+                <span>🔥 \${meal.calories} kcal</span>
+                \${meal.smartAddition ? \`<span style="color:#60a5fa">+ \${meal.smartAddition.name}</span>\` : ''}
             </div>
         </div>
     \`;
 }
 
-function openMealDetails(date, mealType) {
-    const dayPlan = appState.plan.find(p => p.date === date);
-    const meal    = dayPlan.meals[mealType];
-    const labels  = { breakfast: 'Colazione', lunch: 'Pranzo', snack: 'Spuntino', dinner: 'Cena' };
-    const portion = meal.portion || 1.0;
+// ============================================================
+// MODAL & DETAILS
+// ============================================================
 
-    let html = '';
-    if (meal.imageUrl) html += \`<img src="\${meal.imageUrl}" class="recipe-header-img" alt="\${meal.name}">\`;
+function openMealDetails(date, slot) {
+    const day = appState.plan.find(p => p.date === date);
+    const meal = day.meals[slot];
+    const container = document.getElementById('meal-details');
+    
+    container.innerHTML = \`
+        <img src="\${meal.image_url || 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=800&q=80'}" class="recipe-header-img">
+        <div class="recipe-body">
+            <div class="meal-tag">\${slot.toUpperCase()}</div>
+            <h2 style="font-size: 2rem; margin-bottom: 1.5rem;">\${meal.name}</h2>
+            
+            <div class="recipe-meta">
+                <div class="meta-item"><span class="label">Calorie</span><span class="value">\${meal.calories} kcal</span></div>
+                <div class="meta-item"><span class="label">Proteine</span><span class="value">\${Math.round(meal.protein * (meal.portion||1))}g</span></div>
+                <div class="meta-item"><span class="label">Carbi</span><span class="value">\${Math.round(meal.carbs * (meal.portion||1))}g</span></div>
+                <div class="meta-item"><span class="label">Grassi</span><span class="value">\${Math.round(meal.fat * (meal.portion||1))}g</span></div>
+            </div>
 
-    let additionHtml = '';
-    if (meal.smartAddition) {
-        additionHtml = \`
-            <div style="background:rgba(16, 185, 129, 0.1); border-left:4px solid var(--accent-primary); padding:1rem; margin:1rem 0; border-radius:8px;">
-                <h4 style="color:var(--accent-primary); margin-bottom:0.3rem;">💡 Integrazione Consigliata</h4>
-                <p style="font-size:0.9rem;">Per raggiungere il tuo target, aggiungi: <strong>\${meal.smartAddition.amount}\${meal.smartAddition.unit} di \${meal.smartAddition.name}</strong>.</p>
+            <div class="recipe-section">
+                <h4>🛒 Ingredienti (\${meal.portion > 1 ? 'Porzione abbondante' : '1 porzione'})</h4>
+                <ul style="list-style: none; padding: 0;">
+                    \${meal.ingredients.map(ing => \`
+                        <li class="ingredient-check-item">
+                            <span style="font-weight: 700; color: var(--accent-primary); min-width: 60px;">\${Math.round(ing.amount * (meal.portion||1))} \${ing.unit}</span>
+                            <span>\${ing.name}</span>
+                        </li>
+                    \`).join('')}
+                </ul>
+                \${meal.smartAddition ? \`
+                    <div class="smart-addition-tag">
+                        <strong>💡 Nota:</strong> Aggiungi \${meal.smartAddition.amount}\${meal.smartAddition.unit} di \${meal.smartAddition.name} per bilanciare le calorie.
+                    </div>
+                \` : ''}
+            </div>
+
+            \${meal.instructions ? \`
+                <div class="recipe-section">
+                    <h4>👨‍🍳 Preparazione</h4>
+                    <ol>
+                        \${meal.instructions.map(step => \`<li>\${step}</li>\`).join('')}
+                    </ol>
+                </div>
+            \` : ''}
+
+            \${meal.source_url ? \`
+                <div class="recipe-source-container">
+                    <a href="\${meal.source_url}" target="_blank" class="recipe-source-link">
+                        Vedi ricetta originale su GialloZafferano ↗
+                    </a>
+                </div>
+            \` : ''}
+
+            <div style="margin-top: 3rem; display: grid; gap: 1rem;">
+                <button class="btn btn-primary" onclick="window.swapMeal('\${date}', '\${slot}'); app.closeModal()">🔄 Prova un'altra opzione</button>
+                <button class="btn" style="background: rgba(255,255,255,0.05);" onclick="app.closeModal()">Chiudi</button>
+            </div>
+        </div>
+    \`;
+
+    document.getElementById('meal-modal').classList.remove('hidden');
+}
+
+function closeModal() {
+    document.getElementById('meal-modal').classList.add('hidden');
+}
+
+function confirmDay(date, status) {
+    const idx = appState.plan.findIndex(p => p.date === date);
+    if (idx !== -1) {
+        appState.plan[idx].confirmed = status;
+        saveToCloud();
+        renderDashboard();
+    }
+}
+
+function confirmMeal(date, slot, status) {
+    const idx = appState.plan.findIndex(p => p.date === date);
+    if (idx !== -1) {
+        appState.plan[idx].meals[slot].confirmed = status;
+        saveToCloud();
+        renderDashboard();
+    }
+}
+
+// ============================================================
+// MONTHLY CALENDAR
+// ============================================================
+
+function renderMonthlyCalendar() {
+    const container = document.getElementById('monthly-calendar-container');
+    const now = new Date();
+    const month = now.getMonth();
+    const year = now.getFullYear();
+    
+    // Griglia: Intestazione giorni
+    const daysNames = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
+    let html = '<div class="calendar-month-grid">';
+    daysNames.forEach(d => html += \`<div class="calendar-day-header">\${d}</div>\`);
+
+    const firstDay = new Date(year, month, 1);
+    let startOffset = firstDay.getDay() - 1; // Lunedì = 0
+    if (startOffset === -1) startOffset = 6; // Domenica
+
+    // Celle vuote iniziali
+    for (let i = 0; i < startOffset; i++) {
+        html += '<div class="calendar-day-cell empty"></div>';
+    }
+
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const todayStr = getTodayISO();
+
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dateObj = new Date(year, month, d);
+        const dateStr = dateObj.toISOString().slice(0, 10);
+        const dayData = appState.plan.find(p => p.date === dateStr);
+        const isToday = dateStr === todayStr;
+
+        html += \`
+            <div class="calendar-day-cell \${isToday ? 'is-today' : ''}">
+                <div class="calendar-date-number">\${d}</div>
+                \${dayData ? Object.entries(dayData.meals).map(([slot, m]) => \`
+                    <div class="calendar-meal-chip \${slot}" onclick="openMealDetails('\${dateStr}', '\${slot}')">
+                        \${m.name}
+                    </div>
+                \`).join('') : ''}
             </div>
         \`;
     }
-
-    html += \`<div class="recipe-body">
-        <div class="meal-tag">\${labels[mealType]} \${portion > 1.05 ? \`(x\${portion.toFixed(1)})\` : ''}</div>
-        <h2 style="font-size:2rem; margin-bottom:1rem;">\${meal.name}</h2>
-        
-        <div class="recipe-meta">
-            <div class="meta-item"><span class="label">Calorie</span><span class="value">\${Math.round(meal.calories)}</span></div>
-            <div class="meta-item"><span class="label">Prot</span><span class="value">\${Math.round(meal.macros.protein * portion)}g</span></div>
-            <div class="meta-item"><span class="label">Carb</span><span class="value">\${Math.round(meal.macros.carbs * portion)}g</span></div>
-            <div class="meta-item"><span class="label">Fat</span><span class="value">\${Math.round(meal.macros.fat * portion)}g</span></div>
-        </div>
-
-        \${additionHtml}
-
-        <div class="recipe-section">
-            <h4>Ingredienti</h4>
-            <ul style="list-style:none;">
-                \${meal.ingredients.map(i => {
-                    const amt = isNaN(parseFloat(i.amount)) ? i.amount : (parseFloat(i.amount) * portion).toFixed(0);
-                    return \`<li style="padding:0.5rem 0; border-bottom:1px solid var(--glass-border); display:flex; justify-content:space-between;">
-                        <span>\${i.name}</span>
-                        <span style="font-weight:700; color:var(--accent-primary);">\${amt} \${i.unit}</span>
-                    </li>\`;
-                }).join('')}
-            </ul>
-        </div>
-
-        <div class="recipe-section">
-            <h4>Preparazione</h4>
-            <ol style="padding-left:1.2rem; line-height:1.6;">
-                \${(meal.instructions && Array.isArray(meal.instructions)) 
-                    ? meal.instructions.map(s => \`<li style="margin-bottom:0.8rem;">\${s}</li>\`).join('') 
-                    : '<li style="color:var(--text-muted);">Passaggi non disponibili per questa ricetta.</li>'}
-            </ol>
-            
-            \${(meal.instructions && meal.instructions.length > 0) ? \`
-                <button class="btn btn-primary" style="width: 100%; margin-top: 1.5rem; padding: 1rem; font-size: 1rem;" onclick="startCookingSession('\${date}', '\${mealType}')">
-                    👨‍🍳 Inizia Guida Passo-Passo
-                </button>
-            \` : ''}
-
-            \${meal.sourceUrl ? \`<p style="margin-top:1.5rem; font-size:0.85rem;"><a href="\${meal.sourceUrl}" target="_blank" style="color:var(--accent-primary); text-decoration:none;">📖 Vedi ricetta originale su \${new URL(meal.sourceUrl).hostname}</a></p>\` : ''}
-        </div>
-    </div>\`;
-
-    document.getElementById('meal-details').innerHTML = html;
-    document.getElementById('meal-modal').classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
+    html += '</div>';
+    container.innerHTML = html;
 }
 
-function startCookingSession(date, type) {
-    const dayPlan = appState.plan.find(p => p.date === date);
-    const meal = dayPlan.meals[type];
-    if (!meal || !meal.instructions || meal.instructions.length === 0) return;
+// ============================================================
+// PROFILE
+// ============================================================
 
-    let currentStep = 0;
-    const totalSteps = meal.instructions.length;
+function renderProfile() {
+    const data = appState.user;
+    const container = document.getElementById('profile-data');
+    
+    container.innerHTML = \`
+        <div class="profile-grid">
+            <div class="profile-edit-card"><div class="label">Altezza</div><div class="value">\${data.height} cm</div></div>
+            <div class="profile-edit-card"><div class="label">Peso</div><div class="value">\${data.weight} kg</div></div>
+            <div class="profile-edit-card"><div class="label">Età</div><div class="value">\${data.age} anni</div></div>
+            <div class="profile-edit-card"><div class="label">Obiettivo</div><div class="value">\${data.goal.toUpperCase()}</div></div>
+            <div class="profile-edit-card"><div class="label">Dieta</div><div class="value">\${data.diet_type.toUpperCase()}</div></div>
+            <div class="profile-edit-card"><div class="label">Pasti</div><div class="value">\${data.eating_pattern.toUpperCase()}</div></div>
+        </div>
+        <div class="glass-panel" style="margin-top: 1rem; border-color: rgba(16, 185, 129, 0.2);">
+            <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">Statistiche</h4>
+            <p>Fabbisogno Giornaliero: <strong>\${data.targetCalories} kcal</strong></p>
+            <p>BMI: <strong>\${calculateBMI(data.weight, data.height).bmi}</strong> (\${calculateBMI(data.weight, data.height).category})</p>
+        </div>
+    \`;
+}
 
-    const modal = document.getElementById('meal-modal');
-    const content = document.getElementById('meal-details');
+async function regeneratePlan() {
+    if (!confirm("Vuoi rigenerare il piano per la prossima settimana? Le modifiche manuali andranno perse.")) return;
+    showLoader();
+    appState.plan = generateMonthlyPlan(appState.user);
+    await saveToCloud();
+    showView('dashboard');
+    hideLoader();
+}
 
-    const updateView = () => {
-        const progress = ((currentStep + 1) / totalSteps) * 100;
-        content.innerHTML = \`
-            <div style="padding: 2rem; display: flex; flex-direction: column; min-height: 400px; justify-content: space-between;">
-                <div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-                        <span style="font-size: 0.8rem; font-weight: 700; color: var(--accent-primary); text-transform: uppercase;">Step \${currentStep + 1} di \${totalSteps}</span>
-                        <div style="width: 60%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
-                            <div style="width: \${progress}%; height: 100%; background: var(--accent-primary); transition: width 0.3s ease;"></div>
-                        </div>
-                    </div>
-                    
-                    <h2 style="font-size: 1.5rem; line-height: 1.4; margin-bottom: 2rem;">\${meal.instructions[currentStep]}</h2>
-                </div>
+async function resetProfile() {
+    if (!confirm("Attenzione: questo cancellerà tutti i tuoi dati e dovrai rifare l'onboarding. Continuare?")) return;
+    showLoader();
+    await _supabase.from('profiles').delete().eq('id', currentUser.id);
+    appState.user = null;
+    appState.plan = [];
+    showView('onboarding');
+    hideLoader();
+}
 
-                <div style="display: flex; gap: 1rem; margin-top: 2rem;">
-                    <button class="btn btn-outline" style="flex: 1;" \${currentStep === 0 ? 'disabled' : ''} id="cooking-prev">⬅️ Indietro</button>
-                    \${currentStep < totalSteps - 1 
-                        ? \`<button class="btn btn-primary" style="flex: 2;" id="cooking-next">Avanti ➡️</button>\`
-                        : \`<button class="btn btn-primary" style="flex: 2; background: #10b981;" id="cooking-finish">🏁 Fine e Conferma</button>\`
-                    }
-                </div>
-            </div>
+// ============================================================
+// SHOPPING LIST
+// ============================================================
+
+function renderShoppingDaySelector() {
+    const container = document.getElementById('shopping-days-selector');
+    const today = getTodayISO();
+    const futureDays = appState.plan.filter(p => p.date >= today).slice(0, 14);
+
+    container.innerHTML = futureDays.map(day => {
+        const d = new Date(day.date);
+        const label = d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric' });
+        return \`
+            <label style="display: flex; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.05); padding: 0.5rem 1rem; border-radius: 50px; cursor: pointer;">
+                <input type="checkbox" class="shopping-day-cb" value="\${day.date}" checked>
+                <span>\${label}</span>
+            </label>
         \`;
+    }).join('');
+}
 
-        const prevBtn = document.getElementById('cooking-prev');
-        const nextBtn = document.getElementById('cooking-next');
-        const finishBtn = document.getElementById('cooking-finish');
+function renderShoppingList(forceGenerate = true) {
+    const container = document.getElementById('shopping-list-content');
+    if (!appState.plan || appState.plan.length === 0) {
+        container.innerHTML = '<p class="text-center text-muted">Nessun piano attivo.</p>';
+        return;
+    }
+    
+    if (!forceGenerate) {
+        container.innerHTML = '<p class="text-center text-muted">Seleziona i giorni in alto e clicca "Genera Lista Selezionata" per vedere gli ingredienti da comprare.</p>';
+        return;
+    }
 
-        if (prevBtn) prevBtn.onclick = () => { currentStep--; updateView(); };
-        if (nextBtn) nextBtn.onclick = () => { currentStep++; updateView(); };
-        if (finishBtn) finishBtn.onclick = () => {
-            confirmMeal(date, type);
-            closeModal();
-            renderDashboard();
-        };
+    const today = getTodayISO();
+    let plan = appState.plan.filter(p => p.date >= today).slice(0, 31);
+    
+    const checkboxes = document.querySelectorAll('.shopping-day-cb');
+    if (checkboxes.length > 0) {
+        const selectedDates = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+        if (selectedDates.length === 0) {
+            container.innerHTML = '<p class="text-center text-muted">Seleziona almeno un giorno.</p>';
+            return;
+        }
+        plan = plan.filter(day => selectedDates.includes(day.date));
+    }
+
+    const items = {};
+    plan.forEach(day => {
+        Object.values(day.meals).forEach(meal => {
+            if (!meal) return;
+            const portion = meal.portion || 1;
+            meal.ingredients.forEach(ing => {
+                const key = \`\${ing.name.toLowerCase()}-\${ing.unit}\`;
+                if (!items[key]) items[key] = { name: ing.name, amount: 0, unit: ing.unit };
+                const amt = parseFloat(ing.amount);
+                if (!isNaN(amt)) items[key].amount += (amt * portion);
+            });
+            if (meal.smartAddition) {
+                const sa = meal.smartAddition;
+                const key = \`\${sa.name.toLowerCase()}-\${sa.unit}\`;
+                if (!items[key]) items[key] = { name: sa.name, amount: 0, unit: sa.unit };
+                items[key].amount += sa.amount;
+            }
+        });
+    });
+
+    // ----- Categorize ingredients -----
+    const CATEGORIES = {
+        '🥩 Carne & Pesce':   ['pollo','manzo','salmone','tonno','merluzzo','tacchino','maiale','prosciutto','bresaola','speck','sgombro','gamberi','cozze','vongole','pesce','carne','filetto','bistecca','cotoletta','hamburger','wurstel','macinato'],
+        '🥛 Latticini & Uova': ['latte','panna','yogurt','burro','mozzarella','parmigiano','pecorino','ricotta','uova','uovo','formaggio','grana','emmental','stracchino','mascarpone','gorgonzola','feta','skyr'],
+        '🍞 Pane & Cereali':   ['pane','pasta','riso','farro','orzo','avena','farina','semola','crackers','grissini','pancarré','pangrattato','polenta','lasagne','gnocchi','couscous','quinoa','fette biscottate','cereali','muesli'],
+        '🫒 Condimenti & Grassi': ['olio','aceto','sale','pepe','zucchero','miele','salsa','maionese','ketchup','senape','dado','brodo','pesto','tahini','soia','crema'],
+        '🌿 Spezie & Aromi':   ['aglio','cipolla','prezzemolo','basilico','rosmarino','origano','timo','menta','zenzero','curcuma','paprika','cannella','peperoncino','curry','alloro','salvia','erba','noce moscata'],
+        '🥫 Conserve & Scatolame': ['pomodori','passata','pelati','legumi','fagioli','ceci','lenticchie','mais','tonno in scatola','sardine','acciughe','olive','capperi','funghi secchi','concentrato'],
+        '🫙 Frutta Secca & Semi': ['noci','mandorle','nocciole','pistacchi','anacardi','pinoli','semi di','sesamo','lino','girasole','chia','cocco','burro d\'arachidi'],
+        '🍎 Frutta':           ['mele','banane','arance','limone','lime','fragole','mirtilli','lamponi','pesche','pere','uva','kiwi','melone','anguria','ananas','avocado','mango','pompelmo'],
+        '🥦 Verdure':          ['spinaci','zucchine','carote','broccoli','cavolfiore','cavolo','melanzane','peperoni','pomodori freschi','lattuga','insalata','sedano','finocchio','asparagi','piselli','carciofi','radicchio','bietole','patate','cipollotti','rucola','valeriana','zucca','porri','fagiolini'],
     };
 
-    updateView();
+    function getCategory(name) {
+        const lower = name.toLowerCase();
+        for (const [cat, keywords] of Object.entries(CATEGORIES)) {
+            if (keywords.some(k => lower.includes(k))) return cat;
+        }
+        return '🛒 Altro';
+    }
+
+    // Group by category
+    const grouped = {};
+    Object.values(items).sort((a, b) => a.name.localeCompare(b.name)).forEach(item => {
+        const cat = getCategory(item.name);
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(item);
+    });
+
+    const catOrder = Object.keys(CATEGORIES).concat(['🛒 Altro']);
+    const sortedCats = catOrder.filter(c => grouped[c]);
+
+    let html = sortedCats.map(cat => \`
+        <div style="margin-bottom: 2rem;">
+            <h4 style="font-size: 0.9rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 1rem; letter-spacing: 0.05em; border-left: 3px solid var(--accent-primary); padding-left: 0.75rem;">\${cat.toUpperCase()}</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem;">
+                \${grouped[cat].map(item => \`
+                    <label style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 12px; padding: 0.75rem 1rem; cursor: pointer; transition: all 0.2s;">
+                        <span style="display: flex; align-items: center; gap: 0.75rem; min-width: 0;">
+                            <input type="checkbox" class="ingredient-checkbox" style="width: 18px; height: 18px; cursor: pointer;">
+                            <span style="font-size: 0.95rem; font-weight: 500; line-height: 1.2; color: var(--text-primary);">\${item.name}</span>
+                        </span>
+                        <span style="font-weight: 700; color: var(--accent-primary); white-space: nowrap; font-size: 0.9rem; background: rgba(16, 185, 129, 0.1); padding: 2px 6px; border-radius: 4px;">\${Math.round(item.amount)} \${item.unit}</span>
+                    </label>
+                \`).join('')}
+            </div>
+        </div>
+    \`).join('');
+
+    container.innerHTML = html || '<p class="text-center text-muted">Nessun ingrediente trovato per i giorni selezionati.</p>';
 }
+
+// ============================================================
+// BOOTSTRAP
+// ============================================================
+
+window.app = {
+    showView,
+    closeModal
+};
+
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log("NutriPlan: DOM Content Loaded.");
+    initDomRefs();
+
+    if (typeof _supabase === 'undefined') {
+        console.error("NutriPlan: _supabase is not defined! Check supabase-client.js");
+        alert("Errore critico: Impossibile connettersi a Supabase. Controlla la console.");
+        hideLoader();
+        return;
+    }
+
+    _supabase.auth.onAuthStateChange(async (event, session) => {
+        console.log("NutriPlan: Auth state changed:", event);
+        try {
+            if (session) {
+                currentUser = session.user;
+                await fetchRecipesFromSupabase();
+                const hasProfile = await loadFromCloud();
+                if (hasProfile) showView('dashboard');
+                else showView('onboarding');
+            } else {
+                showView('auth');
+            }
+        } catch (err) {
+            console.error("Initialization error:", err);
+            showView('auth');
+        } finally {
+            hideLoader();
+        }
+    });
+
+    // Safety timeout: hide loader after 10s even if something hangs
+    setTimeout(() => {
+        const loader = document.getElementById('global-loader');
+        if (loader && loader.style.display !== 'none') {
+            console.warn("NutriPlan: Safety loader hide triggered.");
+            hideLoader();
+        }
+    }, 10000);
+
+    document.getElementById('btn-close-modal').onclick = closeModal;
+    document.getElementById('meal-modal').onclick = (e) => {
+        if (e.target === document.getElementById('meal-modal')) closeModal();
+    };
+
+    document.getElementById('login-form').onsubmit = handleLoginSubmit;
+    document.getElementById('onboarding-form').onsubmit = handleOnboardingSubmit;
+    
+    document.getElementById('mobile-menu-toggle').onclick = () => {
+        document.getElementById('main-nav').classList.toggle('mobile-active');
+    };
+
+    document.getElementById('btn-logout').onclick = () => _supabase.auth.signOut();
+});
+
+// Global exposure
+window.swapMeal = (date, type) => {
+    const idx = appState.plan.findIndex(p => p.date === date);
+    const current = appState.plan[idx].meals[type];
+    const alt = findAlternativeMeal(current, appState.user, current.calories, [current.id]);
+    if (alt) {
+        appState.plan[idx].meals[type] = alt;
+        debouncedSave();
+        renderDashboard();
+    }
+};
+
+window.confirmMeal = confirmMeal;
