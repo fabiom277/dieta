@@ -830,22 +830,77 @@ function generateShoppingList() {
 function renderMonthlyCalendar() {
     const container = document.getElementById('monthly-calendar-container');
     if (!container) return;
+
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear  = now.getFullYear();
+    const todayStr = getTodayISO();
+
+    const monthNames = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+    const weekDays = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+
+    // Header con mese
+    let html = `<div style="display:flex; justify-content:center; align-items:center; margin-bottom:2rem;">
+        <h2 style="font-size: 1.5rem; color: var(--text-primary);">${monthNames[currentMonth]} ${currentYear}</h2>
+    </div>`;
+
+    // Apertura Griglia
+    html += `<div class="calendar-month-grid">`;
+    
+    // 1. Header giorni settimana
+    weekDays.forEach(wd => {
+        html += `<div class="calendar-day-header">${wd}</div>`;
+    });
+
+    // 2. Calcolo offset e giorni
+    const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); // 0=Dom
+    const startOffset = (firstDayOfMonth === 0) ? 6 : firstDayOfMonth - 1; // Offset per Lunedì
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    let html = `<div class="calendar-month-grid">`;
+
+    // 3. Slot vuoti inizio mese
+    for (let i = 0; i < startOffset; i++) {
+        html += `<div class="calendar-day-cell calendar-empty-slot" style="opacity: 0.1;"></div>`;
+    }
+
+    // 4. Giorni del mese
     for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dayPlan = appState.plan.find(p => p.date === dateStr);
-        html += `<div class="calendar-day-cell"><strong>${day}</strong>`;
-        if (dayPlan) {
-            if (dayPlan.meals.breakfast) html += `<div>☕ ${dayPlan.meals.breakfast.name}</div>`;
-            if (dayPlan.meals.lunch) html += `<div>🍝 ${dayPlan.meals.lunch.name}</div>`;
+        const isToday = dateStr === todayStr;
+        const dayName = weekDays[new Date(currentYear, currentMonth, day).getDay() === 0 ? 6 : new Date(currentYear, currentMonth, day).getDay() - 1];
+
+        html += `<div class="calendar-day-cell ${isToday ? 'is-today' : ''}">
+            <div class="calendar-date-number">
+                <span class="mobile-day-name" style="width:2.5rem; font-weight:normal; opacity:0.7;">${dayName}</span>
+                ${day}
+            </div>`;
+        
+        if (dayPlan && dayPlan.meals) {
+            const m = dayPlan.meals;
+            if (m.breakfast) {
+                html += `<div class="calendar-meal-chip breakfast" onclick="openMealDetails('${dateStr}', 'breakfast')">
+                    <span>☕</span> <span>${m.breakfast.name}</span>
+                </div>`;
+            }
+            if (m.lunch) {
+                html += `<div class="calendar-meal-chip lunch" onclick="openMealDetails('${dateStr}', 'lunch')">
+                    <span>🍝</span> <span>${m.lunch.name}</span>
+                </div>`;
+            }
+            if (m.snack) {
+                html += `<div class="calendar-meal-chip snack" onclick="openMealDetails('${dateStr}', 'snack')">
+                    <span>🍎</span> <span>${m.snack.name}</span>
+                </div>`;
+            }
+            if (dayPlan.confirmed) {
+                html += `<div style="font-size:0.55rem; text-align:right; color:#4ade80; margin-top:auto; font-weight:bold; letter-spacing:0.05em;">✅ CONFERMATO</div>`;
+            }
         }
+        
         html += `</div>`;
     }
-    html += `</div>`;
+
+    html += `</div>`; // Chiusura Griglia
     container.innerHTML = html;
 }
 
