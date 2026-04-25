@@ -3,223 +3,199 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NutriPlan - Il tuo piano alimentare premium</title>
+    <title>NutriPlan - Mediterranean Diet Planner</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=2.9">
+    <link rel="stylesheet" href="css/style.css?v=2.9.2">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
     <!-- Global Loader -->
-    <div id="global-loader" class="loader-container">
-        <div class="logo-big" style="margin-bottom: 2rem;">NutriPlan</div>
-        <div class="spinner"></div>
-        <p style="margin-top: 1.5rem; color: var(--text-secondary); font-weight: 600; letter-spacing: 1px;">SINCRONIZZAZIONE...</p>
+    <div id="global-loader" style="position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg-dark); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999; transition: opacity 0.5s ease;">
+        <div class="logo" style="margin-bottom:1rem;">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
+            <h1 style="font-size:1.5rem;">NutriPlan</h1>
+        </div>
+        <p style="color:var(--text-secondary); font-size:0.9rem;">Sincronizzazione in corso...</p>
     </div>
 
-    <!-- Main App Container -->
-    <div id="app" style="display: none;">
-        
-        <!-- View: Auth -->
-        <div id="view-auth" class="view auth-container hidden">
-            <div class="logo-big">NutriPlan</div>
-            <p style="color: var(--text-secondary); margin-bottom: 2.5rem; font-size: 1.1rem;">La tua alimentazione, evoluta.</p>
-            
-            <div class="glass-panel" style="padding: 2.5rem; width: 100%; max-width: 400px;">
-                <button class="btn btn-primary" style="width: 100%; margin-bottom: 1rem;" onclick="loginWithGithub()">
-                    Accedi con GitHub
-                </button>
-                <p style="font-size: 0.8rem; color: var(--text-secondary);">
-                    Accedendo accetti i nostri termini di servizio.
-                </p>
+    <header>
+        <div class="header-container">
+            <div class="header-left">
+                <a href="#" class="logo" onclick="location.reload()">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
+                    <h1>NutriPlan</h1>
+                </a>
+            </div>
+
+            <div class="header-right">
+                <nav id="main-nav" class="hidden">
+                    <div class="nav-links">
+                        <button id="nav-dashboard" class="active" onclick="app.showView('dashboard')">📅 Piano</button>
+                        <button id="nav-calendar" onclick="app.showView('calendar')">🗓️ Calendario</button>
+                        <button id="nav-shopping" onclick="app.showView('shopping')">🛒 Spesa</button>
+                        <button id="nav-profile" onclick="app.showView('profile')">👤 Profilo</button>
+                    </div>
+                </nav>
             </div>
         </div>
+    </header>
 
-        <!-- View: Onboarding (Profilo Iniziale) -->
-        <div id="view-onboarding" class="view container hidden" style="padding: 3rem 1rem;">
-            <div class="text-center" style="margin-bottom: 3rem;">
-                <h1 style="font-size: 2rem; margin-bottom: 0.5rem;">Benvenuto su NutriPlan</h1>
-                <p style="color: var(--text-secondary);">Configuriamo il tuo piano personalizzato.</p>
-            </div>
+    <main>
+        <div class="container">
+            <!-- Auth View -->
+            <section id="view-auth" class="view auth-container">
+                <div class="logo-big">NutriPlan</div>
+                <div class="glass-panel" style="width: 100%; max-width: 400px; padding: 2.5rem;">
+                    <h2 style="margin-bottom: 1.5rem;">Benvenuto</h2>
+                    <p class="text-secondary" style="margin-bottom: 2rem;">Accedi per visualizzare il tuo piano alimentare personalizzato.</p>
+                    <form id="login-form">
+                        <input type="email" id="login-email" placeholder="Email" required style="width:100%; padding:1rem; border-radius:12px; border:1px solid var(--glass-border); background:rgba(255,255,255,0.05); color:#fff; margin-bottom:1rem;">
+                        <input type="password" id="login-password" placeholder="Password" required style="width:100%; padding:1rem; border-radius:12px; border:1px solid var(--glass-border); background:rgba(255,255,255,0.05); color:#fff; margin-bottom:1.5rem;">
+                        <button type="submit" class="btn btn-primary" style="width:100%;">Accedi</button>
+                        <p style="margin-top:2rem; font-size:0.9rem; color:var(--text-secondary);">
+                            Non hai un account? <a href="#" onclick="app.showView('onboarding')" style="color:var(--accent-primary); text-decoration:none; font-weight:700;">Registrati →</a>
+                        </p>
+                    </form>
+                </div>
+            </section>
 
-            <div class="glass-panel" style="padding: 2rem; max-width: 600px; margin: 0 auto;">
-                <form id="onboarding-form">
-                    <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
-                        <div class="form-group">
-                            <label style="display:block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">Sesso</label>
-                            <select id="onb-gender" style="width:100%; padding:0.8rem; border-radius:12px; background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); color:white;">
+            <!-- Onboarding View -->
+            <section id="view-onboarding" class="view hidden" style="padding: 2rem 0;">
+                <div class="glass-panel" style="max-width: 600px; margin: 0 auto; padding: 2.5rem;">
+                    <h2 style="margin-bottom: 1rem;">Crea il tuo Profilo</h2>
+                    <p class="text-secondary" style="margin-bottom: 2rem;">I tuoi dati ci servono per calcolare il fabbisogno calorico ideale.</p>
+                    <form id="onboarding-form">
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                            <input type="number" id="age" placeholder="Età" required style="width:100%; padding:1rem; border-radius:12px; border:1px solid var(--glass-border); background:rgba(255,255,255,0.05); color:#fff;">
+                            <select id="gender" required style="width:100%; padding:1rem; border-radius:12px; border:1px solid var(--glass-border); background:rgba(255,255,255,0.05); color:#fff;">
                                 <option value="male">Uomo</option>
                                 <option value="female">Donna</option>
                             </select>
                         </div>
-                        <div class="form-group">
-                            <label style="display:block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">Età</label>
-                            <input type="number" id="onb-age" required min="18" max="100" style="width:100%; padding:0.8rem; border-radius:12px; background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); color:white;">
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                            <input type="number" id="weight" placeholder="Peso (kg)" required step="0.1" style="width:100%; padding:1rem; border-radius:12px; border:1px solid var(--glass-border); background:rgba(255,255,255,0.05); color:#fff;">
+                            <input type="number" id="height" placeholder="Altezza (cm)" required style="width:100%; padding:1rem; border-radius:12px; border:1px solid var(--glass-border); background:rgba(255,255,255,0.05); color:#fff;">
                         </div>
-                        <div class="form-group">
-                            <label style="display:block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">Peso (kg)</label>
-                            <input type="number" id="onb-weight" required min="30" max="250" step="0.1" style="width:100%; padding:0.8rem; border-radius:12px; background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); color:white;">
-                        </div>
-                        <div class="form-group">
-                            <label style="display:block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">Altezza (cm)</label>
-                            <input type="number" id="onb-height" required min="120" max="230" style="width:100%; padding:0.8rem; border-radius:12px; background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); color:white;">
-                        </div>
-                        <div class="form-group">
-                            <label style="display:block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">Attività</label>
-                            <select id="onb-activity" style="width:100%; padding:0.8rem; border-radius:12px; background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); color:white;">
-                                <option value="1.2">Sedentario</option>
-                                <option value="1.375">Leggero</option>
-                                <option value="1.55">Moderato</option>
-                                <option value="1.725">Attivo</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label style="display:block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">Obiettivo</label>
-                            <select id="onb-goal" style="width:100%; padding:0.8rem; border-radius:12px; background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); color:white;">
-                                <option value="lose">Perdere peso</option>
-                                <option value="maintain">Mantenimento</option>
-                                <option value="gain">Aumento massa</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-group" style="margin-top: 1.5rem;">
-                        <label style="display:block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">Tipo di Dieta Preferita</label>
-                        <select id="onb-diet" style="width:100%; padding:0.8rem; border-radius:12px; background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); color:white;">
-                            <option value="standard">Standard (Italiana)</option>
-                            <option value="vegetarian">Vegetariana</option>
-                            <option value="vegan">Vegana</option>
+                        <select id="activity" required style="width:100%; padding:1rem; border-radius:12px; border:1px solid var(--glass-border); background:rgba(255,255,255,0.05); color:#fff; margin-bottom:1rem;">
+                            <option value="sedentary">Sedentario (poco esercizio)</option>
+                            <option value="light">Leggero (1-3 giorni/sett)</option>
+                            <option value="moderate">Moderato (3-5 giorni/sett)</option>
+                            <option value="active">Attivo (6-7 giorni/sett)</option>
                         </select>
+                        <select id="dietType" required style="width:100%; padding:1rem; border-radius:12px; border:1px solid var(--glass-border); background:rgba(255,255,255,0.05); color:#fff; margin-bottom:1rem;">
+                            <option value="balanced">Bilanciata</option>
+                            <option value="mediterranean">Mediterranea</option>
+                            <option value="lowcarb">Low Carb</option>
+                            <option value="vegetarian">Vegetariana</option>
+                        </select>
+                        <select id="goal" required style="width:100%; padding:1rem; border-radius:12px; border:1px solid var(--glass-border); background:rgba(255,255,255,0.05); color:#fff; margin-bottom:2rem;">
+                            <option value="lose">Perdere Peso</option>
+                            <option value="maintain">Mantenimento</option>
+                            <option value="gain">Aumento Massa</option>
+                        </select>
+                        
+                        <div style="background:rgba(255,255,255,0.05); padding:1.5rem; border-radius:16px; margin-bottom:2rem;">
+                            <h3 style="font-size:1rem; margin-bottom:1rem;">Dati Account</h3>
+                            <input type="email" id="onboarding-email" placeholder="Email" required style="width:100%; padding:1rem; border-radius:12px; border:1px solid var(--glass-border); background:rgba(255,255,255,0.05); color:#fff; margin-bottom:1rem;">
+                            <input type="password" id="onboarding-password" placeholder="Scegli Password" required style="width:100%; padding:1rem; border-radius:12px; border:1px solid var(--glass-border); background:rgba(255,255,255,0.05); color:#fff;">
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary" style="width:100%;">Genera Piano Personalizzato</button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Dashboard View -->
+            <section id="view-dashboard" class="view hidden" style="padding-top: 1rem;">
+                <div class="dashboard-header">
+                    <div>
+                        <h2 id="dashboard-title">Il tuo Piano</h2>
+                        <p class="text-secondary" id="dashboard-subtitle">Caricamento...</p>
                     </div>
-                    <div class="form-group" style="margin-top: 1.5rem;">
-                        <label style="display:block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">Cibi da evitare / Allergie</label>
-                        <textarea id="onb-dislikes" placeholder="es: funghi, peperoni, glutine..." style="width:100%; padding:0.8rem; border-radius:12px; background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); color:white; min-height: 80px;"></textarea>
+                </div>
+                <div id="dashboard-content" class="weekly-grid">
+                    <!-- Days and meals injected here -->
+                </div>
+            </section>
+
+            <!-- Calendar View -->
+            <section id="view-calendar" class="view hidden" style="padding-top: 1rem;">
+                <h2 style="margin-bottom: 1rem;">Calendario Mensile</h2>
+                <div class="glass-panel">
+                    <div id="calendar-grid" class="calendar-month-grid">
+                        <!-- Days injected here -->
                     </div>
-                    
-                    <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 2rem; padding: 1rem;">
-                        Genera il mio Piano Alimentare
-                    </button>
-                </form>
-            </div>
-        </div>
-
-        <!-- View: Dashboard (Settimanale) -->
-        <div id="view-dashboard" class="view container hidden">
-            <header class="dashboard-header">
-                <div>
-                    <h1 style="font-size: 2.2rem; font-weight: 800;">NutriPlan</h1>
-                    <p style="color: var(--text-secondary); font-weight: 500;">Il tuo percorso verso il benessere</p>
                 </div>
-                <div style="text-align: right;">
-                    <button class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.8rem;" onclick="generateNewWeek()">
-                        🔄 Rigenera Piano
-                    </button>
+                <div style="margin-top: 2rem; padding-bottom: 120px;">
+                    <h3 style="margin-bottom: 1rem;">Legenda</h3>
+                    <div style="display:flex; gap:1rem; font-size:0.8rem; color:var(--text-secondary);">
+                        <div style="display:flex; align-items:center; gap:0.5rem;"><span style="width:12px; height:12px; border-radius:3px; background:var(--accent-primary);"></span> Oggi</div>
+                        <div style="display:flex; align-items:center; gap:0.5rem;"><span style="width:12px; height:12px; border-radius:3px; border:1px solid var(--status-success);"></span> Piano Confermato</div>
+                    </div>
                 </div>
-            </header>
+            </section>
 
-            <div id="dashboard-content">
-                <!-- Days will be injected here -->
-            </div>
-
-            <!-- Spacer for nav -->
-            <div style="height: 100px;"></div>
-        </div>
-
-        <!-- View: Calendar (Mensile) -->
-        <div id="view-calendar" class="view container hidden">
-            <header style="padding: 2rem 0;">
-                <h1 style="font-size: 2rem; font-weight: 800;">Calendario Mensile</h1>
-                <p style="color: var(--text-secondary);">Panoramica del tuo progresso</p>
-            </header>
-            
-            <div id="monthly-calendar-container">
-                <!-- Monthly grid injected here -->
-            </div>
-            
-            <div style="height: 100px;"></div>
-        </div>
-
-        <!-- View: Shopping List -->
-        <div id="view-shopping" class="view container hidden">
-            <header style="padding: 2rem 0;">
-                <h1 style="font-size: 2rem; font-weight: 800;">Lista della Spesa</h1>
-                <p style="color: var(--text-secondary);">Organizzata per categorie</p>
-            </header>
-
-            <div class="glass-panel" style="padding: 1.5rem; margin-bottom: 2rem;">
-                <h3 style="margin-bottom: 1rem; font-size: 0.9rem; text-transform: uppercase; color: var(--text-secondary);">Seleziona i giorni</h3>
-                <div id="shopping-days-selector" style="display: flex; flex-wrap: wrap; gap: 0.75rem;">
-                    <!-- Days checkboxes injected here -->
+            <!-- Shopping View -->
+            <section id="view-shopping" class="view hidden" style="padding-top: 1rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+                    <h2>Lista della Spesa</h2>
+                    <button class="btn btn-outline" style="padding:0.5rem 1rem; font-size:0.8rem;" onclick="app.clearShoppingList()">Svuota</button>
                 </div>
-            </div>
-
-            <div id="shopping-list-content">
-                <!-- List items injected here -->
-            </div>
-            
-            <div style="height: 100px;"></div>
-        </div>
-
-        <!-- View: Profile -->
-        <div id="view-profile" class="view container hidden">
-            <header style="padding: 2rem 0;">
-                <h1 style="font-size: 2rem; font-weight: 800;">Il tuo Profilo</h1>
-                <p style="color: var(--text-secondary);">Gestisci i tuoi parametri vitali</p>
-            </header>
-
-            <div id="profile-data">
-                <!-- Profile summary and edit form injected here -->
-            </div>
-
-            <div style="margin-top: 3rem; text-align: center;">
-                <button class="btn btn-outline" style="color: var(--status-error); border-color: rgba(255,82,82,0.2);" onclick="logout()">
-                    Esci dall'account
-                </button>
-                <div style="margin-top: 1.5rem;">
-                    <button class="btn" style="background:none; color: var(--text-secondary); font-size: 0.8rem; text-decoration: underline;" onclick="resetProfile()">
-                        Reset Completo (Cancella Piano)
-                    </button>
+                <div id="shopping-list-content" style="padding-bottom: 120px;">
+                    <!-- Items injected here -->
                 </div>
-            </div>
-            
-            <div style="height: 120px;"></div>
-        </div>
+            </section>
 
-        <!-- Bottom Navigation -->
-        <nav class="bottom-nav">
-            <div class="nav-item" onclick="showView('dashboard')" id="nav-dashboard">
-                <span class="icon">🏠</span>
-                <span>Home</span>
-            </div>
-            <div class="nav-item" onclick="showView('calendar')" id="nav-calendar">
-                <span class="icon">📅</span>
-                <span>Mese</span>
-            </div>
-            <div class="nav-item" onclick="showView('shopping')" id="nav-shopping">
-                <span class="icon">🛒</span>
-                <span>Spesa</span>
-            </div>
-            <div class="nav-item" onclick="showView('profile')" id="nav-profile">
-                <span class="icon">👤</span>
-                <span>Profilo</span>
-            </div>
-        </nav>
-
-        <!-- Meal Details Modal -->
-        <div id="meal-modal" class="modal-overlay hidden" onclick="closeModal()">
-            <div class="modal-content" onclick="event.stopPropagation()">
-                <div id="meal-modal-body">
-                    <!-- Content injected here -->
+            <!-- Profile View -->
+            <section id="view-profile" class="view hidden" style="padding-top: 1rem;">
+                <div id="profile-content" style="padding-bottom: 120px;">
+                    <!-- Summary or Edit form injected here -->
                 </div>
-                <button class="btn btn-outline" style="width: 100%; margin-top: 1.5rem;" onclick="closeModal()">Chiudi</button>
-            </div>
+            </section>
         </div>
+    </main>
 
+    <!-- Navigation -->
+    <nav class="bottom-nav">
+        <a class="nav-item active" onclick="app.showView('dashboard')">
+            <span class="icon">📅</span>
+            <span>Piano</span>
+        </a>
+        <a class="nav-item" onclick="app.showView('calendar')">
+            <span class="icon">🗓️</span>
+            <span>Calendario</span>
+        </a>
+        <a class="nav-item" onclick="app.showView('shopping')">
+            <span class="icon">🛒</span>
+            <span>Spesa</span>
+        </a>
+        <a class="nav-item" onclick="app.showView('profile')">
+            <span class="icon">👤</span>
+            <span>Profilo</span>
+        </a>
+    </nav>
+
+    <!-- Meal Details Modal -->
+    <div id="meal-modal" class="modal-overlay hidden" onclick="closeModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div id="meal-modal-body">
+                <!-- Content injected here -->
+            </div>
+            <button class="btn btn-outline" style="width: 100%; margin-top: 1.5rem;" onclick="closeModal()">Chiudi</button>
+        </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="js/supabase-client.js?v=2.9"></script>
-    <script src="js/nutrition.js?v=2.9"></script>
-    <script src="js/app.js?v=2.9"></script>
+    <!-- Floating Toast Feedback -->
+    <div id="toast" class="hidden" style="position:fixed; bottom:100px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.9); color:#fff; padding:12px 24px; border-radius:50px; z-index:9999; border:1px solid var(--accent-primary); box-shadow:0 10px 20px rgba(0,0,0,0.5); font-weight:600;"></div>
+
+    <script src="js/app.js?v=2.9.2"></script>
+    <script>
+        // Global function to close modals
+        function closeModal() {
+            document.getElementById('meal-modal').classList.add('hidden');
+        }
+    </script>
 </body>
 </html>
