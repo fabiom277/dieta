@@ -207,7 +207,10 @@ function showView(viewName) {
 
     if (viewName === 'dashboard') renderDashboard();
     if (viewName === 'calendar') renderMonthlyCalendar();
-    if (viewName === 'shopping') renderShoppingList();
+    if (viewName === 'shopping') {
+        setupShoppingDaysSelector();
+        renderShoppingList();
+    }
     if (viewName === 'profile') renderProfile();
     if (viewName === 'admin') admin.init();
 
@@ -299,6 +302,9 @@ function renderMealSlot(date, type, meal) {
                 <span>🥩 ${Math.round(meal.macros.protein * (meal.portion || 1))}g</span>
             </div>
             <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+                <button class="btn-swap btn-outline" style="padding:0.4rem 0.8rem; font-size:0.8rem; border-color:${meal.confirmed ? '#10b981' : ''}; color:${meal.confirmed ? '#10b981' : ''};" onclick="event.stopPropagation(); confirmMeal('${date}', '${type}')">
+                    ${meal.confirmed ? '✓ Fatto' : 'Conferma'}
+                </button>
                 <button class="btn-swap btn-outline" style="padding:0.4rem 0.8rem; font-size:0.8rem;" onclick="event.stopPropagation(); swapMeal('${date}', '${type}')">Cambia</button>
             </div>
         </div>
@@ -373,29 +379,96 @@ function closeModal() {
 // ============================================================
 
 function renderProfile() {
-    const container = document.getElementById('profile-container');
+    const container = document.getElementById('profile-data');
+    if (!container) return;
     const u = appState.user;
-    const dietLabels = { standard: 'Standard', vegetarian: 'Vegetariana', vegan: 'Vegana' };
-    const patternLabels = { standard: 'Standard', if_morning: 'Intermittente (Mattina)', if_evening: 'Intermittente (Sera)' };
+    if (!u) return;
 
     container.innerHTML = `
-        <div class="dashboard-header">
-            <h2 style="font-size:2rem;">Il Mio Profilo</h2>
-        </div>
-        <div class="day-card">
+        <form id="edit-profile-form" onsubmit="saveProfile(event)">
             <div class="form-grid">
-                <div><label>Peso</label><p style="font-size:1.5rem; font-weight:700;">${u.weight} kg</p></div>
-                <div><label>Altezza</label><p style="font-size:1.5rem; font-weight:700;">${u.height} cm</p></div>
-                <div><label>Target</label><p style="font-size:1.5rem; font-weight:700; color:var(--accent-primary);">${u.targetCalories} kcal</p></div>
-                <div><label>Dieta</label><p style="font-weight:600;">${dietLabels[u.diet_type]}</p></div>
-                <div><label>Schema</label><p style="font-weight:600;">${patternLabels[u.eating_pattern]}</p></div>
+                <div class="form-group">
+                    <label>Peso (kg)</label>
+                    <input type="number" id="edit-weight" required min="30" max="250" step="0.1" value="${u.weight}">
+                </div>
+                <div class="form-group">
+                    <label>Altezza (cm)</label>
+                    <input type="number" id="edit-height" required min="100" max="250" value="${u.height}">
+                </div>
+                <div class="form-group">
+                    <label>Attività</label>
+                    <select id="edit-activity" required>
+                        <option value="1.2" ${u.activity_level === 1.2 ? 'selected' : ''}>Sedentario</option>
+                        <option value="1.375" ${u.activity_level === 1.375 ? 'selected' : ''}>Leggero</option>
+                        <option value="1.55" ${u.activity_level === 1.55 ? 'selected' : ''}>Moderato</option>
+                        <option value="1.725" ${u.activity_level === 1.725 ? 'selected' : ''}>Attivo</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Obiettivo</label>
+                    <select id="edit-goal">
+                        <option value="lose" ${u.goal === 'lose' ? 'selected' : ''}>Perdere peso</option>
+                        <option value="maintain" ${u.goal === 'maintain' ? 'selected' : ''}>Mantenimento</option>
+                        <option value="gain" ${u.goal === 'gain' ? 'selected' : ''}>Aumento massa</option>
+                    </select>
+                </div>
             </div>
-            <div style="margin-top:2rem; display:flex; gap:1rem;">
-                <button class="btn-primary" onclick="regeneratePlan()">🔄 Rigenera Piano</button>
-                <button class="btn-outline" onclick="resetProfile()">⚠️ Reset Profilo</button>
+            <div class="form-group" style="margin-top: 1rem;">
+                <label>Cibi da evitare</label>
+                <textarea id="edit-dislikes" rows="1">${u.excluded_foods.join(', ')}</textarea>
             </div>
-        </div>
+            <div style="margin-top: 2rem; display: flex; gap: 1rem; align-items: center;">
+                <button type="submit" class="btn btn-primary" style="flex: 1;">💾 Salva Modifiche</button>
+                <span id="profile-save-feedback" style="color: #10b981; font-weight: bold; opacity: 0; transition: opacity 0.3s;">Salvato!</span>
+            </div>
+        </form>
     `;
+}
+
+function saveProfile(e) {
+    e.preventDefault();
+    const weight = parseFloat(document.getElementById('edit-weight').value);
+    const height = parseInt(document.getElementById('edit-height').value);
+    const activity = parseFloat(document.getElementById('edit-activity').value);
+    const goal = document.getElementById('edit-goal').value;
+    const dislikes = document.getElementById('edit-dislikes').value.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+
+    appState.user.weight = weight;
+    appState.user.height = height;
+    appState.user.activity_level = activity;
+    appState.user.goal = goal;
+    appState.user.excluded_foods = dislikes;
+
+    // Recalculate target calories using calculateBMI logic
+    const heightM = height / 100;
+    const bmi = weight / (heightM * heightM);
+    let category = '';
+    if (bmi < 18.5) category = 'Sottopeso';
+    else if (bmi < 25) category = 'Normopeso';
+    else if (bmi < 30) category = 'Sovrappeso';
+    else category = 'Obesità';
+
+    let bmr = 0;
+    if (appState.user.gender === 'male') {
+        bmr = 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * appState.user.age);
+    } else {
+        bmr = 447.593 + (9.247 * weight) + (3.098 * height) - (4.330 * appState.user.age);
+    }
+
+    let tdee = bmr * activity;
+    let targetCals = tdee;
+    if (goal === 'lose') targetCals -= 500;
+    if (goal === 'gain') targetCals += 300;
+    
+    appState.user.bmi = bmi.toFixed(1);
+    appState.user.bmiCategory = category;
+    appState.user.targetCalories = Math.round(targetCals);
+
+    debouncedSave();
+    
+    const feedback = document.getElementById('profile-save-feedback');
+    feedback.style.opacity = '1';
+    setTimeout(() => { feedback.style.opacity = '0'; }, 2000);
 }
 
 function regeneratePlan() {
@@ -434,11 +507,12 @@ function renderMonthlyCalendar() {
     }
     
     const today = getTodayISO();
-    const visiblePlan = appState.plan.filter(p => p.date >= today).slice(0, 7);
+    // Use the entire plan for the month calendar (30 days)
+    const visiblePlan = appState.plan.filter(p => p.date >= today).slice(0, 30);
 
     let html = `
         <div class="dashboard-header">
-            <h2 style="font-size:2rem;">🗓️ Calendario Settimanale</h2>
+            <h2 style="font-size:2rem;">🗓️ Calendario Mensile</h2>
         </div>
         <div class="calendar-month-grid">
             <div class="calendar-day-header" data-short="Lun"><span>Lunedì</span></div>
@@ -476,6 +550,31 @@ function renderMonthlyCalendar() {
 // SHOPPING LIST
 // ============================================================
 
+function setupShoppingDaysSelector() {
+    const selectorContainer = document.getElementById('shopping-days-selector');
+    if (!selectorContainer) return;
+    if (!appState.plan || appState.plan.length === 0) {
+        selectorContainer.innerHTML = '';
+        return;
+    }
+    
+    const today = getTodayISO();
+    const plan = appState.plan.filter(p => p.date >= today).slice(0, 7);
+    
+    let html = '';
+    plan.forEach((day, index) => {
+        const dateObj = new Date(day.date + 'T00:00:00');
+        const dayName = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'][dateObj.getDay()];
+        html += `
+            <label style="display:flex; align-items:center; gap:0.5rem; background:rgba(0,0,0,0.2); padding:0.5rem 1rem; border-radius:8px; cursor:pointer;">
+                <input type="checkbox" class="shopping-day-cb" value="${day.date}" ${index < 3 ? 'checked' : ''}>
+                <span>${dayName} ${dateObj.getDate()}</span>
+            </label>
+        `;
+    });
+    selectorContainer.innerHTML = html;
+}
+
 function renderShoppingList() {
     const container = document.getElementById('shopping-list-content');
     
@@ -490,7 +589,17 @@ function renderShoppingList() {
     }
     
     const today = getTodayISO();
-    const plan = appState.plan.filter(p => p.date >= today).slice(0, 7);
+    let plan = appState.plan.filter(p => p.date >= today).slice(0, 7);
+    
+    const checkboxes = document.querySelectorAll('.shopping-day-cb');
+    if (checkboxes.length > 0) {
+        const selectedDates = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+        if (selectedDates.length === 0) {
+            container.innerHTML = '<p class="text-center text-muted">Seleziona almeno un giorno.</p>';
+            return;
+        }
+        plan = plan.filter(day => selectedDates.includes(day.date));
+    }
     
     const items = {};
     plan.forEach(day => {
