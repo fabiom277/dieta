@@ -219,6 +219,13 @@ function showView(viewName) {
         document.getElementById('main-nav').classList.add('hidden');
     } else {
         document.getElementById('main-nav').classList.remove('hidden');
+        
+        // Update active state of nav buttons
+        document.querySelectorAll('.nav-links button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        const activeBtn = document.getElementById(`nav-${viewName}`);
+        if (activeBtn) activeBtn.classList.add('active');
     }
     
     // Close mobile menu if open
@@ -292,7 +299,6 @@ function renderMealSlot(date, type, meal) {
     
     return `
         <div class="meal-card" onclick="openMealDetails('${date}', '${type}')">
-            ${meal.imageUrl ? `<img src="${meal.imageUrl}" alt="${meal.name}">` : ''}
             <div class="meal-tag">${labels[type]}</div>
             <h3 style="margin-bottom:0.5rem; font-size:1.1rem;">${meal.name}</h3>
             ${meal.portion > 1.05 ? `<span class="portion-badge">Dose x${meal.portion.toFixed(1)}</span>` : ''}
@@ -572,10 +578,13 @@ function setupShoppingDaysSelector() {
             </label>
         `;
     });
+    html += `
+        <button class="btn btn-primary" style="margin-top: 1rem; width: 100%;" onclick="renderShoppingList(true)">Genera Lista Selezionata</button>
+    `;
     selectorContainer.innerHTML = html;
 }
 
-function renderShoppingList() {
+function renderShoppingList(forceGenerate = false) {
     const container = document.getElementById('shopping-list-content');
     
     if (!container) return;
@@ -588,6 +597,11 @@ function renderShoppingList() {
         return;
     }
     
+    if (!forceGenerate) {
+        container.innerHTML = '<p class="text-center text-muted">Seleziona i giorni in alto e clicca "Genera Lista Selezionata" per vedere gli ingredienti da comprare.</p>';
+        return;
+    }
+
     const today = getTodayISO();
     let plan = appState.plan.filter(p => p.date >= today).slice(0, 7);
     
