@@ -1,3 +1,5 @@
+// --- NUTRITION LOGIC ---
+
 // Global recipe pools (populated from Supabase)
 let recipesDB = [];
 let snacksDB = [];
