@@ -227,7 +227,7 @@ function showView(viewName) {
 // ============================================================
 
 function renderDashboard() {
-    const container = document.getElementById('dashboard-content');
+    const container = document.getElementById('view-dashboard');
     if (!container) return;
     
     if (!appState.plan || appState.plan.length === 0) {
@@ -474,8 +474,9 @@ function renderMonthlyCalendar() {
 // ============================================================
 
 function renderShoppingList() {
-    const container = document.getElementById('shopping-list-container');
+    const container = document.getElementById('shopping-list-content');
     
+    if (!container) return;
     if (!appState.plan || appState.plan.length === 0) {
         container.innerHTML = `
             <div class="glass-panel text-center" style="padding: 3rem;">

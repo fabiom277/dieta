@@ -38,10 +38,10 @@
 
                 <nav id="main-nav" class="hidden">
                     <div class="nav-links">
-                        <button id="nav-dashboard" class="active">📅 Piano</button>
-                        <button id="nav-calendar">🗓️ Calendario</button>
-                        <button id="nav-shopping">🛒 Spesa</button>
-                        <button id="nav-profile">👤 Profilo</button>
+                        <button id="nav-dashboard" class="active" onclick="app.showView('dashboard')">📅 Piano</button>
+                        <button id="nav-calendar" onclick="app.showView('calendar')">🗓️ Calendario</button>
+                        <button id="nav-shopping" onclick="app.showView('shopping')">🛒 Spesa</button>
+                        <button id="nav-profile" onclick="app.showView('profile')">👤 Profilo</button>
                     </div>
                     <button id="btn-logout">Esci</button>
                 </nav>
