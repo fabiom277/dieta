@@ -257,6 +257,8 @@ function renderDashboard() {
         </div>
     `;
 
+    html += `<div class="calendar-grid">`;
+
     visiblePlan.forEach(day => {
         let totalCals = 0;
         Object.values(day.meals).forEach(m => totalCals += (m.calories || 0));
@@ -277,6 +279,7 @@ function renderDashboard() {
         `;
     });
 
+    html += `</div>`;
     container.innerHTML = html;
 }
 
@@ -510,18 +513,16 @@ function renderShoppingList() {
     });
 
     let html = `
-        <div class="day-card">
-            <ul style="list-style:none;">
-                ${Object.values(items).map(item => `
-                    <li style="padding:0.75rem 0; border-bottom:1px solid var(--glass-border); display:flex; justify-content:space-between; align-items:center;">
-                        <label style="display:flex; align-items:center; gap:0.75rem; cursor:pointer;">
-                            <input type="checkbox">
-                            <span>${item.name}</span>
-                        </label>
-                        <span style="font-weight:700; color:var(--accent-primary);">${Math.round(item.amount)} ${item.unit}</span>
-                    </li>
-                `).join('')}
-            </ul>
+        <div class="ingredient-list">
+            ${Object.values(items).map(item => `
+                <div class="ingredient-item">
+                    <label style="display:flex; align-items:center; gap:0.75rem; cursor:pointer; flex: 1;">
+                        <input type="checkbox" class="ingredient-checkbox">
+                        <span style="line-height: 1.2;">${item.name}</span>
+                    </label>
+                    <span style="font-weight:700; color:var(--accent-primary); white-space: nowrap; margin-left: 1rem;">${Math.round(item.amount)} ${item.unit}</span>
+                </div>
+            `).join('')}
         </div>
     `;
     container.innerHTML = html;
