@@ -4,6 +4,10 @@
 let recipesDB = [];
 let snacksDB = [];
 
+// Esporta globalmente per visibilità tra script
+window.recipesDB = recipesDB;
+window.snacksDB = snacksDB;
+
 
 function getTodayISO() {
     return new Date().toISOString().slice(0, 10);
@@ -60,7 +64,7 @@ function getSafeRecipes(dislikesStr, pool, bannedRecipeIds) {
     const banned = bannedRecipeIds || [];
 
     // Prima filtra le ricette bannate dall'utente
-    let filtered = pool.filter(r => r && !banned.includes(String(r.id)));
+    let filtered = pool.filter(r => r && !banned.includes(r.id));
 
     if (!dislikesStr || dislikesStr.trim() === '') return filtered;
 
@@ -72,7 +76,7 @@ function getSafeRecipes(dislikesStr, pool, bannedRecipeIds) {
     
     const expandedDislikes = new Set(rawDislikes);
     rawDislikes.forEach(d => {
-        // Cerca corrispondenze parziali nelle chiavi del MAP
+        // Cerca corrispondenze parziali nelle chiavi del MAP (es. "crostacei" se l'utente scrive "i crostacei")
         Object.keys(FOOD_CATEGORY_MAP).forEach(cat => {
             if (d.includes(cat) || cat.includes(d)) {
                 FOOD_CATEGORY_MAP[cat].forEach(synonym => expandedDislikes.add(synonym));
@@ -103,7 +107,7 @@ function findClosestMeal(safePool, targetCals, avoidIds = []) {
     if (safePool.length === 0) return null;
     
     // Filtra ulteriormente per evitare ricette in avoidIds
-    let filteredPool = safePool.filter(r => r && !avoidIds.includes(String(r.id)));
+    let filteredPool = safePool.filter(r => r && !avoidIds.includes(r.id));
     
     // Se svuotiamo troppo il pool, torniamo a quello sicuro originale (fallback)
     const finalPool = filteredPool.length > 0 ? filteredPool : safePool;
@@ -137,7 +141,7 @@ function generateSingleDay(targetCalories, dislikesStr, bannedRecipeIds, avoidId
 
     const targetBreakfastCals = targetCalories * 0.30;
     const targetLunchCals     = targetCalories * 0.55;
-    const targetSnackCals     = targetCalories * 0.15; 
+    const targetSnackCals     = targetCalories * 0.15; // Target per spuntino
 
     const breakfast = findClosestMeal(bPool, targetBreakfastCals, avoidIds);
     const lunch     = findClosestMeal(lPool, targetLunchCals, avoidIds);
@@ -172,11 +176,14 @@ function generateSingleDay(targetCalories, dislikesStr, bannedRecipeIds, avoidId
 
 /**
  * Genera un piano settimanale (usato solo per rigenerazione completa)
+ * Ora ritorna un array con struttura { date, meals } usando le prossime 7 date
  */
 function generateMonthlyPlan(targetCalories, dislikesStr, bannedRecipeIds) {
     const plan = [];
     const banned = bannedRecipeIds || [];
     const today = getTodayISO();
+    
+    // Teniamo traccia degli ID usati in questa generazione per massimizzare la varietà
     const usedInPlanIds = [];
 
     for (let i = 0; i < 7; i++) {
@@ -187,15 +194,17 @@ function generateMonthlyPlan(targetCalories, dislikesStr, bannedRecipeIds) {
         const da = String(d.getDate()).padStart(2, '0');
         const date = `${y}-${mo}-${da}`;
 
+        // Passiamo gli ID già usati per evitare ripetizioni nello stesso piano
         const dayPlan = generateSingleDay(targetCalories, dislikesStr, banned, usedInPlanIds);
         dayPlan.date = date;
-        dayPlan.confirmed = false; 
+        dayPlan.confirmed = false; // Nuovo stato per conferma
 
         const mealTypes = ['breakfast', 'snack', 'lunch'];
         mealTypes.forEach(t => {
-            if (dayPlan.meals && dayPlan.meals[t]) {
+            if (dayPlan.meals[t]) {
                 dayPlan.meals[t].mealInstanceId = `${date}-${t}`;
-                usedInPlanIds.push(String(dayPlan.meals[t].id));
+                // Aggiungiamo ai usati
+                usedInPlanIds.push(dayPlan.meals[t].id);
             }
         });
 
@@ -205,13 +214,13 @@ function generateMonthlyPlan(targetCalories, dislikesStr, bannedRecipeIds) {
 }
 
 /**
- * Trova un'alternativa a un pasto
+ * Trova un'alternativa a un pasto, escludendo bannedRecipeIds e avoidIds
  */
 function findAlternativeMeal(currentMeal, dislikesStr, targetCaloriesForThatMeal, bannedRecipeIds, avoidIds = []) {
     const banned = [...bannedRecipeIds, ...(avoidIds || [])];
-    let pool = recipesDB.filter(r => r.type === currentMeal.type && String(r.id) !== String(currentMeal.id));
+    let pool = recipesDB.filter(r => r.type === currentMeal.type && r.id !== currentMeal.id);
     if (currentMeal.type === 'snack') {
-        pool = snacksDB.filter(s => String(s.id) !== String(currentMeal.id));
+        pool = snacksDB.filter(s => s.id !== currentMeal.id);
     }
     const safePool  = getSafeRecipes(dislikesStr, pool, banned);
     const finalPool = safePool.length > 0 ? safePool : pool;

@@ -2,32 +2,34 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NutriPlan - Il tuo assistente alimentare</title>
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NutriPlan - Il tuo assistente alimentare intelligente</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Supabase Client -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css?v=2.5">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="js/config.js"></script>
 </head>
-<body class="dark-theme">
-    <div id="global-loader" style="position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg-dark); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999;">
+<body>
+    <!-- Global Loader -->
+    <div id="global-loader" style="position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg-primary); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999; transition: opacity 0.5s ease;">
         <div class="logo" style="margin-bottom:1rem;">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
             <h1 style="font-size:1.5rem;">NutriPlan</h1>
         </div>
-        <p style="color:var(--text-muted); font-size:0.9rem;">Sincronizzazione in corso...</p>
+        <div class="spinner" style="width:30px; height:30px; border:3px solid rgba(255,255,255,0.1); border-top-color:var(--accent-primary); border-radius:50%; animation: spin 1s linear infinite;"></div>
+        <p style="margin-top:1rem; font-size:0.8rem; opacity:0.7; letter-spacing:0.05em;">Sincronizzazione in corso...</p>
     </div>
+
+    <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 
     <header>
         <div class="header-container">
-            <div class="logo">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            <a href="#" class="logo" onclick="location.reload()">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                 <h1>NutriPlan</h1>
-            </div>
-            
+            </a>
+
             <button id="mobile-menu-toggle" class="mobile-only" aria-label="Menu">
                 <span class="bar"></span>
                 <span class="bar"></span>
@@ -59,151 +61,158 @@
 
                 <!-- Form Login -->
                 <form id="login-form">
-                    <div class="form-group">
-                        <input type="email" id="login-email" placeholder="Email" required autocomplete="email">
+                    <div class="form-group" style="text-align: left; margin-bottom: 1.5rem;">
+                        <label>Email</label>
+                        <input type="email" id="login-email" placeholder="latua@email.com" required>
                     </div>
-                    <div class="form-group">
-                        <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password">
+                    <div class="form-group" style="text-align: left; margin-bottom: 2rem;">
+                        <label>Password</label>
+                        <input type="password" id="login-password" placeholder="••••••••" required>
                     </div>
-                    <button type="submit" id="login-submit" class="btn btn-primary" style="width:100%">Accedi</button>
-                    <p style="text-align:center; margin-top:1rem; font-size:0.8rem; color:var(--text-secondary);">
-                        Problemi di accesso? <a href="#" onclick="resetAppSession()" style="color:var(--accent-primary)">Resetta sessione</a>
-                    </p>
+                    <button type="submit" id="login-submit" class="btn btn-primary" style="width: 100%;">Accedi Ora</button>
                 </form>
 
                 <!-- Form Registrazione -->
-                <form id="register-form" style="display:none">
-                    <div class="form-group">
-                        <input type="email" id="register-email" placeholder="Email" required autocomplete="email">
+                <form id="register-form" style="display: none;">
+                    <div class="form-group" style="text-align: left; margin-bottom: 1.5rem;">
+                        <label>Email</label>
+                        <input type="email" id="register-email" placeholder="latua@email.com" required>
                     </div>
-                    <div class="form-group">
-                        <input type="password" id="register-password" placeholder="Scegli una password" required autocomplete="new-password">
+                    <div class="form-group" style="text-align: left; margin-bottom: 2rem;">
+                        <label>Password (min. 6 caratteri)</label>
+                        <input type="password" id="register-password" placeholder="••••••••" required>
                     </div>
-                    <button type="submit" id="register-submit" class="btn btn-primary" style="width:100%">Crea Account</button>
+                    <button type="submit" id="register-submit" class="btn btn-primary" style="width: 100%;">Crea Account</button>
                 </form>
 
-                <div id="auth-loading" style="display:none; margin-top:1rem;">
-                    <div class="spinner"></div>
+                <div id="auth-loading" style="display:none; margin-top: 1.5rem; color: var(--text-secondary);">
+                    Elaborazione in corso...
                 </div>
             </div>
         </section>
 
-        <!-- Onboarding View -->
+        <!-- Onboarding View (Personalizzazione) -->
         <section id="view-onboarding" class="view hidden">
             <div class="glass-panel" style="max-width: 600px; margin: 0 auto;">
-                <h2 class="text-center">Personalizza il tuo Piano</h2>
+                <h2 class="text-center" style="margin-bottom: 2rem;">Personalizza il tuo Piano</h2>
                 <form id="onboarding-form" class="form-grid">
                     <div class="form-group">
-                        <label for="age">Età</label>
-                        <input type="number" id="age" required min="18" max="100">
+                        <label>Età</label>
+                        <input type="number" id="age" value="30" required>
                     </div>
                     <div class="form-group">
-                        <label for="gender">Sesso</label>
+                        <label>Sesso</label>
                         <select id="gender">
                             <option value="male">Uomo</option>
                             <option value="female">Donna</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="weight">Peso (kg)</label>
-                        <input type="number" id="weight" step="0.1" required>
+                        <label>Peso (kg)</label>
+                        <input type="number" id="weight" value="70" required>
                     </div>
                     <div class="form-group">
-                        <label for="height">Altezza (cm)</label>
-                        <input type="number" id="height" required>
+                        <label>Altezza (cm)</label>
+                        <input type="number" id="height" value="175" required>
                     </div>
                     <div class="form-group">
-                        <label for="activity">Attività Fisica</label>
+                        <label>Attività Fisica</label>
                         <select id="activity">
-                            <option value="1.2">Sedentario</option>
-                            <option value="1.375">Leggero (1-2 volte/sett)</option>
-                            <option value="1.55">Moderato (3-4 volte/sett)</option>
-                            <option value="1.725">Attivo (5+ volte/sett)</option>
+                            <option value="1.2">Sedentario (poco/nulla)</option>
+                            <option value="1.375">Leggero (1-3 giorni/sett)</option>
+                            <option value="1.55">Moderato (3-5 giorni/sett)</option>
+                            <option value="1.725">Attivo (6-7 giorni/sett)</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="goal">Obiettivo</label>
+                        <label>Obiettivo</label>
                         <select id="goal">
-                            <option value="lose">Perdere Peso</option>
-                            <option value="maintain">Mantenere Peso</option>
-                            <option value="gain">Aumentare Massa</option>
+                            <option value="lose">Perdere peso</option>
+                            <option value="maintain" selected>Mantenimento</option>
+                            <option value="gain">Aumento massa</option>
                         </select>
                     </div>
                     <div class="form-group" style="grid-column: 1 / -1;">
-                        <label for="dislikes">Cibi che non ti piacciono (separati da virgola)</label>
-                        <input type="text" id="dislikes" placeholder="es. funghi, cipolla, pesce">
+                        <label>Cibi o Ingredienti che non ti piacciono (opzionale)</label>
+                        <textarea id="dislikes" placeholder="es. funghi, cipolla, pesce spada..." rows="2"></textarea>
                     </div>
-                    <button type="submit" class="btn btn-primary" style="grid-column: 1 / -1; margin-top: 1rem;">Genera la mia Dieta</button>
+                    <button type="submit" class="btn btn-primary" style="grid-column: 1 / -1; margin-top: 1rem;">Genera il mio Piano</button>
                 </form>
             </div>
         </section>
 
-        <!-- Dashboard View -->
+        <!-- Dashboard View (Settimana) -->
         <section id="view-dashboard" class="view hidden">
             <div class="dashboard-header">
                 <div>
-                    <h2 style="font-size: 2rem; letter-spacing: -0.02em;">Il tuo Piano Settimanale</h2>
-                    <p id="caloric-info">Caricamento fabbisogno...</p>
+                    <h2>Il tuo Piano Settimanale</h2>
+                    <p id="caloric-info">Fabbisogno calcolato: <span class="highlight">-- kcal</span>/giorno</p>
+                </div>
+            </div>
+
+            <div class="calendar-grid" id="calendar-grid">
+                <!-- Days will be injected here -->
+            </div>
+
+        </section>
+
+        <!-- Monthly Calendar View -->
+        <section id="view-calendar" class="view hidden">
+            <h2 class="text-center" style="margin-bottom: 2rem;">Calendario Storico</h2>
+            <div id="monthly-calendar-container" style="padding: 0.5rem; overflow-x: auto; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid var(--glass-border);">
+                <!-- monthly-calendar-grid injected here -->
+            </div>
+        </section>
+
+        <!-- Shopping List View -->
+        <section id="view-shopping" class="view hidden">
+            <div class="dashboard-header">
+                <h2>Lista della Spesa</h2>
+                <div class="shopping-controls">
+                    <button class="btn btn-primary" id="generate-shopping">Genera Lista Selezionata</button>
                 </div>
             </div>
             
-            <div id="calendar-grid" class="calendar-grid">
-                <!-- Days populated by JS -->
+            <div class="glass-panel" style="margin-bottom: 2rem;">
+                <h3 style="margin-bottom: 1rem;">Seleziona i giorni per cui vuoi fare la spesa:</h3>
+                <div id="shopping-days-selector" style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <!-- Popolato dinamicamente da app.js -->
+                </div>
             </div>
-        </section>
 
-        <!-- Calendar View (Monthly) -->
-        <section id="view-calendar" class="view hidden">
-            <div class="dashboard-header" style="justify-content: center; margin-bottom: 2rem;">
-                <h2 style="font-size: 2rem; letter-spacing: -0.02em;">Calendario Storico</h2>
-            </div>
-            <div id="monthly-calendar-container"></div>
-        </section>
-
-        <!-- Shopping View -->
-        <section id="view-shopping" class="view hidden">
             <div class="glass-panel">
-                <h2 class="text-center" style="margin-bottom: 2rem;">Lista della Spesa</h2>
-                
-                <div style="margin-bottom: 2rem; text-align:center;">
-                    <p style="margin-bottom:1rem; color:var(--text-secondary);">Seleziona i giorni per cui fare la spesa:</p>
-                    <div id="shopping-days-selector" style="display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; margin-bottom: 1.5rem;"></div>
-                    <button id="generate-shopping" class="btn btn-primary">Aggiorna Lista</button>
-                </div>
-
                 <div id="shopping-list-content">
-                    <p class="text-center text-muted">Seleziona i giorni e premi "Aggiorna Lista" per iniziare.</p>
+                    <p class="text-center text-muted">Seleziona i giorni e clicca "Genera Lista" per vedere gli ingredienti.</p>
                 </div>
             </div>
         </section>
+
 
         <!-- Profile View -->
         <section id="view-profile" class="view hidden">
-            <div class="glass-panel" style="max-width: 700px; margin: 0 auto;">
-                <h2 style="margin-bottom: 2rem;">Il Mio Profilo</h2>
-                
+            <div class="glass-panel" style="max-width: 600px; margin: 0 auto;">
+                <h2 style="margin-bottom: 1.5rem;">Il Mio Profilo</h2>
                 <div id="profile-data" style="margin-bottom: 2rem;"></div>
-
                 <div style="display: flex; flex-direction: column; gap: 1rem;">
-                    <button id="btn-regenerate" class="btn" style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--accent-primary); color: var(--accent-primary);">🔄 Rigenera Piano Settimanale</button>
-                    <button id="btn-reset" class="btn" style="background: rgba(255, 255, 255, 0.05); color: var(--text-muted); font-size: 0.85rem;">Cambia Profilo (Reset)</button>
+                    <button id="btn-regenerate" class="btn btn-primary">🔄 Rigenera Piano Settimanale</button>
+                    <button id="btn-reset" class="btn" style="background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #f87171;">⚠️ Cambia Profilo (Reset)</button>
                 </div>
             </div>
         </section>
+
     </main>
 
-    <!-- Meal Detail Modal -->
     <div id="meal-modal" class="modal hidden">
-        <div class="modal-content glass-panel">
-            <button id="btn-close-modal" class="close-btn">&times;</button>
-            <div id="meal-details" class="recipe-container">
-                <!-- Detailed by JS -->
+        <div class="modal-content">
+            <button class="close-modal" id="btn-close-modal">&times;</button>
+            <div id="meal-details">
+                <!-- Meal details injected here -->
             </div>
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="js/nutrition.js"></script>
-    <script src="js/app.js"></script>
+    <script src="js/supabase-client.js?v=2.1"></script>
+    <script src="js/nutrition.js?v=2.1"></script>
+    <script src="js/app.js?v=2.1"></script>
 </body>
 </html>

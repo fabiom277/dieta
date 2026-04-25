@@ -33,6 +33,7 @@ function showAuthError(msg) {
 }
 
 function switchAuthTab(type) {
+    console.log("NutriPlan: switching auth tab to", type);
     const loginForm = document.getElementById('login-form');
     const registerForm = document.getElementById('register-form');
     const tabLogin = document.getElementById('tab-login');
@@ -64,9 +65,9 @@ async function handleAuthSubmit(e) {
     const errorEl   = document.getElementById('auth-error');
     const submitBtn = document.getElementById(isLogin ? 'login-submit' : 'register-submit');
 
-    if (loadingEl) loadingEl.style.display = 'block';
-    if (submitBtn) submitBtn.disabled = true;
-    if (errorEl) errorEl.style.display = 'none';
+    loadingEl.style.display = 'block';
+    submitBtn.disabled = true;
+    errorEl.style.display = 'none';
 
     try {
         let result;
@@ -75,8 +76,8 @@ async function handleAuthSubmit(e) {
         } else {
             result = await _supabase.auth.signUp({ email, password });
             if (!result.error && result.data.user && !result.data.session) {
-                if (loadingEl) loadingEl.style.display = 'none';
-                if (submitBtn) submitBtn.disabled = false;
+                loadingEl.style.display = 'none';
+                submitBtn.disabled = false;
                 showAuthError('✅ Registrazione avvenuta! Controlla la tua email per confermare l\'account, poi accedi.');
                 return;
             }
@@ -88,8 +89,8 @@ async function handleAuthSubmit(e) {
     } catch (err) {
         showAuthError('Errore di connessione. Riprova.');
     } finally {
-        if (loadingEl) loadingEl.style.display = 'none';
-        if (submitBtn) submitBtn.disabled = false;
+        loadingEl.style.display = 'none';
+        submitBtn.disabled = false;
     }
 }
 
@@ -140,13 +141,23 @@ async function fetchRecipesFromSupabase() {
 
 async function saveToCloud() {
     if (!currentUser) return;
-    const payload = {
-        id: currentUser.id,
-        nutrition_profile: appState.user,
-        meal_plan: appState.plan,
-        updated_at: new Date().toISOString()
-    };
-    await _supabase.from('user_data').upsert(payload);
+    console.log("NutriPlan: Salvataggio in corso...");
+    
+    try {
+        const { error } = await _supabase
+            .from('user_data')
+            .upsert({
+                id: currentUser.id,
+                nutrition_profile: appState.user,
+                meal_plan: appState.plan,
+                updated_at: new Date()
+            });
+
+        if (error) throw error;
+        console.log("NutriPlan: Dati salvati con successo.");
+    } catch (err) {
+        console.error("NutriPlan: Errore nel salvataggio Cloud:", err);
+    }
 }
 
 function debouncedSave() {
@@ -192,7 +203,6 @@ async function loadFromCloud() {
                         if (day.meals[slot]) {
                             const currentMeal = day.meals[slot];
                             // Cerca nel DB locale (gestisce snacksDB se separato)
-                            // Usiamo String() per confronto sicuro tra ID numerici e stringhe (es. vecchi l26)
                             let updated = recipesDB.find(r => String(r.id) === String(currentMeal.id)) || 
                                           (typeof snacksDB !== 'undefined' ? snacksDB.find(r => String(r.id) === String(currentMeal.id)) : null);
                             
@@ -249,17 +259,13 @@ function ensurePlanCoversWindow() {
             const newDay = generateSingleDay(appState.user.targetCalories, appState.user.dislikes, appState.user.bannedRecipeIds);
             newDay.date = dateStr;
             ['breakfast', 'snack', 'lunch'].forEach(t => {
-                if (newDay.meals && newDay.meals[t]) newDay.meals[t].mealInstanceId = `${dateStr}-${t}`;
+                if (newDay.meals[t]) newDay.meals[t].mealInstanceId = `${dateStr}-${t}`;
             });
             appState.plan.push(newDay);
             added++;
         }
     }
-    if (added > 0) {
-        console.log(`NutriPlan: Aggiunti ${added} nuovi giorni al piano.`);
-        appState.plan.sort((a, b) => a.date.localeCompare(b.date));
-        debouncedSave();
-    }
+    if (added > 0) debouncedSave();
 }
 
 // ============================================================
@@ -272,52 +278,87 @@ document.addEventListener('DOMContentLoaded', () => {
     initDomRefs();
 
     // Fallback di sicurezza: rimuove SEMPRE il loader globale dopo 4 secondi.
+    // Previene il blocco su "Sincronizzazione in corso..." se F5 causa un hang di Supabase.
+    if (localStorage.getItem('supabase.auth.token') && !sessionStorage.getItem('nutriplan_init_check')) {
+        console.log("NutriPlan: Eseguo controllo integrità sessione...");
+        sessionStorage.setItem('nutriplan_init_check', 'true');
+    }
+
+    // Fallback di sicurezza: rimuove SEMPRE il loader globale dopo 4 secondi.
+    // Previene il blocco su "Sincronizzazione in corso..." se F5 causa un hang di Supabase.
     setTimeout(() => {
         const loader = document.getElementById('global-loader');
         if (loader && loader.style.display !== 'none') {
+            console.warn("NutriPlan: Timeout globale di sicurezza raggiunto. Nascondo loader.");
             loader.style.opacity = '0';
             setTimeout(() => loader.style.display = 'none', 500);
         }
     }, 4000);
 
     async function handleAuthChange(event, session) {
-        console.log("NutriPlan: Auth Event ->", event);
+        console.log("NutriPlan: Auth Event ->", event, "Session present:", !!session);
         
-        if (session && session.user) {
-            currentUser = session.user;
-            
-            if (!recipesLoaded) {
-                await fetchRecipesFromSupabase();
-            }
+        try {
+            if (session && session.user) {
+                console.log("NutriPlan: Sessione attiva per", session.user.email);
+                currentUser = session.user;
+                
+                // 1. Carica le ricette se non ancora presenti
+                if (!recipesLoaded) {
+                    const success = await fetchRecipesFromSupabase();
+                    if (!success) {
+                        console.error("NutriPlan: CRITICAL - Failed to load recipes.");
+                        showAuthError("Impossibile caricare il database delle ricette. Riprova più tardi.");
+                        // Non usciamo, proviamo comunque a caricare i dati utente
+                    }
+                }
 
-            setupEventListeners();
-            const hasData = await loadFromCloud();
-            
-            if (hasData) {
-                showView('dashboard');
+                // 2. Assicura che i listener siano pronti
+                setupEventListeners();
+                
+                const hasData = await loadFromCloud();
+                
+                if (hasData) {
+                    console.log("NutriPlan: Dati trovati, mostro Dashboard.");
+                    showView('dashboard');
+                } else {
+                    console.log("NutriPlan: Dati non trovati, mostro Onboarding.");
+                    showView('onboarding');
+                }
             } else {
-                showView('onboarding');
+                console.log("NutriPlan: Nessuna sessione o logout, mostro Auth.");
+                currentUser = null;
+                appState = { user: null, plan: [] };
+                setupEventListeners();
+                showView('auth');
             }
-        } else {
-            currentUser = null;
-            appState = { user: null, plan: [] };
-            setupEventListeners();
+        } catch (error) {
+            console.error("NutriPlan: Errore critico in handleAuthChange:", error);
+            const errorEl = document.getElementById('auth-error');
+            if (errorEl) {
+                errorEl.textContent = "Errore durante il caricamento dei dati: " + (error.message || "Errore sconosciuto.");
+                errorEl.style.display = 'block';
+            }
             showView('auth');
-        }
-        
-        const loader = document.getElementById('global-loader');
-        if (loader) {
-            loader.style.opacity = '0';
-            setTimeout(() => loader.style.display = 'none', 500);
+        } finally {
+            // Rimuove loader globale
+            const loader = document.getElementById('global-loader');
+            if (loader) {
+                console.log("NutriPlan: Nascondo loader.");
+                loader.style.opacity = '0';
+                setTimeout(() => loader.style.display = 'none', 500);
+            }
         }
     }
 
+    // 1. Recupera la sessione iniziale proattivamente (risolve il blocco F5)
     _supabase.auth.getSession().then(({ data: { session } }) => {
         handleAuthChange('INITIAL_SESSION_MANUAL', session);
     });
 
+    // 2. Ascolta i cambiamenti successivi
     _supabase.auth.onAuthStateChange((event, session) => {
-        if (event === 'INITIAL_SESSION') return;
+        if (event === 'INITIAL_SESSION') return; // Gestita manualmente sopra
         handleAuthChange(event, session);
     });
 
@@ -360,6 +401,7 @@ async function resetAppSession() {
 }
 
 function setupEventListeners() {
+    // Guard: don't add listeners twice
     if (document._listenersSetup) return;
     document._listenersSetup = true;
 
@@ -376,24 +418,20 @@ function setupEventListeners() {
     const registerForm = document.getElementById('register-form');
     if (registerForm) registerForm.addEventListener('submit', handleAuthSubmit);
 
-    const btnLogout = document.getElementById('btn-logout');
-    if (btnLogout) btnLogout.addEventListener('click', async () => {
+    document.getElementById('btn-logout').addEventListener('click', async () => {
         await _supabase.auth.signOut();
+        // onAuthStateChange will fire and redirect to auth view
     });
 
-    const btnCloseModal = document.getElementById('btn-close-modal');
-    if (btnCloseModal) btnCloseModal.addEventListener('click', closeModal);
+    document.getElementById('btn-close-modal').addEventListener('click', closeModal);
 
-    const mealModal = document.getElementById('meal-modal');
-    if (mealModal) mealModal.addEventListener('click', (e) => {
+    document.getElementById('meal-modal').addEventListener('click', (e) => {
         if (e.target.id === 'meal-modal') closeModal();
     });
 
-    const btnGenShop = document.getElementById('generate-shopping');
-    if (btnGenShop) btnGenShop.addEventListener('click', generateShoppingList);
+    document.getElementById('generate-shopping').addEventListener('click', generateShoppingList);
 
-    const btnRegen = document.getElementById('btn-regenerate');
-    if (btnRegen) btnRegen.addEventListener('click', () => {
+    document.getElementById('btn-regenerate').addEventListener('click', () => {
         if (confirm('Vuoi rigenerare il piano per i prossimi 7 giorni?')) {
             appState.plan = generateMonthlyPlan(appState.user.targetCalories, appState.user.dislikes, appState.user.bannedRecipeIds);
             debouncedSave();
@@ -401,11 +439,10 @@ function setupEventListeners() {
         }
     });
 
-    const btnReset = document.getElementById('btn-reset');
-    if (btnReset) btnReset.addEventListener('click', () => {
+    document.getElementById('btn-reset').addEventListener('click', () => {
         if (confirm('Sei sicuro? Verranno cancellati tutti i tuoi dati e il piano attuale.')) {
             appState = { user: null, plan: [] };
-            saveToCloud();
+            saveToCloud(); // saves empty
             showView('onboarding');
         }
     });
@@ -416,54 +453,60 @@ function setupEventListeners() {
 // ============================================================
 
 function showView(viewName) {
+    console.log("NutriPlan: Navigating to view ->", viewName);
     // Chiudi il menu mobile se aperto
     toggleMobileMenu(true);
 
     const allViews = ['view-auth','view-onboarding','view-dashboard','view-shopping','view-profile','view-calendar'];
     allViews.forEach(id => {
         const el = document.getElementById(id);
-        if (el) { el.classList.remove('active'); el.classList.add('hidden'); }
+        if (el) { 
+            el.classList.remove('active'); 
+            el.classList.add('hidden'); 
+        }
     });
 
-    const allNavBtns = [navDashboard, navShopping, document.getElementById('nav-profile'), document.getElementById('nav-calendar')];
-    allNavBtns.forEach(b => { if (b) b.classList.remove('active'); });
+    const navItems = {
+        'dashboard': { btn: navDashboard, view: 'view-dashboard' },
+        'shopping':  { btn: navShopping,  view: 'view-shopping' },
+        'calendar':  { btn: document.getElementById('nav-calendar'), view: 'view-calendar' },
+        'profile':   { btn: document.getElementById('nav-profile'),  view: 'view-profile' },
+        'auth':       { btn: null, view: 'view-auth' },
+        'onboarding': { btn: null, view: 'view-onboarding' }
+    };
 
-    if (viewName === 'auth') {
-        const v = document.getElementById('view-auth');
-        if (v) { v.classList.remove('hidden'); v.classList.add('active'); }
-        if (mainNav) mainNav.classList.add('hidden');
+    // Reset nav active states
+    Object.values(navItems).forEach(item => {
+        if (item.btn) item.btn.classList.remove('active');
+    });
 
-    } else if (viewName === 'onboarding') {
-        if (viewOnboarding) { viewOnboarding.classList.remove('hidden'); viewOnboarding.classList.add('active'); }
-        if (mainNav) mainNav.classList.add('hidden');
+    try {
+        const config = navItems[viewName];
+        if (config) {
+            const v = document.getElementById(config.view);
+            if (v) {
+                v.classList.remove('hidden');
+                v.classList.add('active');
+            }
+            if (config.btn) config.btn.classList.add('active');
+            
+            // Gestione mainNav
+            if (viewName === 'auth' || viewName === 'onboarding') {
+                if (mainNav) mainNav.classList.add('hidden');
+            } else {
+                if (mainNav) mainNav.classList.remove('hidden');
+            }
 
-    } else if (viewName === 'dashboard') {
-        if (viewDashboard) { viewDashboard.classList.remove('hidden'); viewDashboard.classList.add('active'); }
-        if (navDashboard) navDashboard.classList.add('active');
-        if (mainNav) mainNav.classList.remove('hidden');
-        renderDashboard();
-
-    } else if (viewName === 'shopping') {
-        if (viewShopping) { viewShopping.classList.remove('hidden'); viewShopping.classList.add('active'); }
-        if (navShopping) navShopping.classList.add('active');
-        if (mainNav) mainNav.classList.remove('hidden');
-        renderShoppingSelector();
-
-    } else if (viewName === 'calendar') {
-        const vc = document.getElementById('view-calendar');
-        if (vc) { vc.classList.remove('hidden'); vc.classList.add('active'); }
-        const nc = document.getElementById('nav-calendar');
-        if (nc) nc.classList.add('active');
-        if (mainNav) mainNav.classList.remove('hidden');
-        renderMonthlyCalendar();
-
-    } else if (viewName === 'profile') {
-        const pv = document.getElementById('view-profile');
-        if (pv) { pv.classList.remove('hidden'); pv.classList.add('active'); }
-        const np = document.getElementById('nav-profile');
-        if (np) np.classList.add('active');
-        if (mainNav) mainNav.classList.remove('hidden');
-        renderProfile();
+            // Rendering specifici
+            if (viewName === 'dashboard') renderDashboard();
+            if (viewName === 'shopping') renderShoppingSelector();
+            if (viewName === 'calendar') renderMonthlyCalendar();
+            if (viewName === 'profile') renderProfile();
+        } else {
+            console.warn("NutriPlan: Unknown view ->", viewName);
+        }
+    } catch (err) {
+        console.error("NutriPlan: Error in showView:", err);
     }
 }
 
@@ -500,10 +543,10 @@ function handleOnboardingSubmit(e) {
 function renderDashboard() {
     if (!appState.user) return;
     try {
-        ensurePlanCoversWindow();
+        ensurePlanCoversWindow(); // Assicura che oggi sia coperto
 
-        const calInfo = document.getElementById('caloric-info');
-        if (calInfo) calInfo.innerHTML = 'Fabbisogno calcolato: <span class="highlight">' + appState.user.targetCalories + ' kcal</span>/giorno';
+        document.getElementById('caloric-info').innerHTML =
+            'Fabbisogno calcolato: <span class="highlight">' + appState.user.targetCalories + ' kcal</span>/giorno';
 
         const grid = document.getElementById('calendar-grid');
         if (!grid) return;
@@ -519,9 +562,9 @@ function renderDashboard() {
 
         visiblePlan.forEach(dayPlan => {
             let totalCals = 0;
-            if (dayPlan.meals.breakfast && !dayPlan.meals.breakfast.excluded) totalCals += dayPlan.meals.breakfast.calories || 0;
-            if (dayPlan.meals.lunch && !dayPlan.meals.lunch.excluded)     totalCals += dayPlan.meals.lunch.calories || 0;
-            if (dayPlan.meals.snack && !dayPlan.meals.snack.excluded) totalCals += dayPlan.meals.snack.calories || 0;
+            if (dayPlan.meals.breakfast && !dayPlan.meals.breakfast.excluded) totalCals += dayPlan.meals.breakfast.calories;
+            if (dayPlan.meals.lunch && !dayPlan.meals.lunch.excluded)     totalCals += dayPlan.meals.lunch.calories;
+            if (dayPlan.meals.snack && !dayPlan.meals.snack.excluded) totalCals += dayPlan.meals.snack.calories;
 
             const card = document.createElement('div');
             card.className = 'day-card';
@@ -548,6 +591,7 @@ function renderDashboard() {
             grid.appendChild(card);
         });
 
+        // Event listeners for buttons in cards
         setupDashboardInteractions();
     } catch (err) {
         console.error("NutriPlan: Errore durante renderDashboard:", err);
@@ -620,7 +664,12 @@ function openMealDetails(date, mealType) {
     const meal    = dayPlan.meals[mealType];
     const labels  = { breakfast: 'Colazione', lunch: 'Pranzo', snack: 'Spuntino' };
 
+    const dateObj = new Date(date + 'T00:00:00');
+    const dateStr = dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' });
+
     let html = '';
+    
+    // Header Image (if available)
     if (meal.imageUrl) {
         html += `<img src="${meal.imageUrl}" class="recipe-header-img" alt="${meal.name}">`;
     }
@@ -630,37 +679,49 @@ function openMealDetails(date, mealType) {
         <h2 style="font-size:1.8rem; margin-bottom:1.5rem;">${meal.name}</h2>
         
         <div class="recipe-meta">
-            <div class="meta-item"><span class="label">Energia</span><span class="value">${meal.calories} kcal</span></div>
-            <div class="meta-item"><span class="label">Proteine</span><span class="value">${meal.macros?.protein || 0}g</span></div>
-            <div class="meta-item"><span class="label">Carboidrati</span><span class="value">${meal.macros?.carbs || 0}g</span></div>
-            <div class="meta-item"><span class="label">Grassi</span><span class="value">${meal.macros?.fat || 0}g</span></div>
-        </div>
-
-        <div class="recipe-section">
-            <h4>Ingredienti</h4>
-            <div style="display:grid; gap:0.5rem;">
-                ${meal.ingredients ? meal.ingredients.map(i => `
-                    <div class="ingredient-check-item">
-                        <span style="font-weight:600; color:var(--accent-primary); min-width:60px;">${i.amount}${i.unit}</span>
-                        <span>${i.name}</span>
-                    </div>
-                `).join('') : ''}
+            <div class="meta-item">
+                <span class="label">Energia</span>
+                <span class="value">${meal.calories} kcal</span>
+            </div>
+            <div class="meta-item">
+                <span class="label">Proteine</span>
+                <span class="value">${meal.macros?.protein || 0}g</span>
+            </div>
+            <div class="meta-item">
+                <span class="label">Carboidrati</span>
+                <span class="value">${meal.macros?.carbs || 0}g</span>
             </div>
         </div>
 
-        <div class="recipe-section">
-            <h4>Preparazione</h4>
-            <ol style="line-height:1.8;">
-                ${meal.instructions ? meal.instructions.map(s => `<li>${s}</li>`).join('') : ''}
-            </ol>
-        </div>`;
+        <h3 style="margin-bottom:1rem;">Ingredienti</h3>
+        <ul class="ingredient-list">`;
+    
+    meal.ingredients.forEach(ing => {
+        html += `<li class="ingredient-item">
+            <span>${ing.name}</span>
+            <span style="color:var(--accent-primary); font-weight:600;">${Math.round(ing.amount)} ${ing.unit}</span>
+        </li>`;
+    });
 
-    if (meal.sourceUrl && meal.sourceUrl.length > 10) {
+    html += `</ul>
+        <h3 style="margin-bottom:1rem;">Istruzioni</h3>`;
+    
+    meal.instructions.forEach((step, i) => {
+        html += `<div class="instruction-step">
+            <div class="step-number">${i+1}</div>
+            <p>${step}</p>
+        </div>`;
+    });
+
+    if (meal.sourceUrl) {
         html += `<div class="recipe-source-container">
-            <a href="${meal.sourceUrl}" target="_blank" class="recipe-source-link">Ricetta Originale</a>
+            <a href="${meal.sourceUrl}" target="_blank" class="recipe-source-btn">
+                <span>📖 Leggi su Fonte Originale</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></svg>
+            </a>
         </div>`;
     }
-    
+
     html += `</div>`;
 
     document.getElementById('meal-details').innerHTML = html;
@@ -668,65 +729,13 @@ function openMealDetails(date, mealType) {
     document.body.style.overflow = 'hidden';
 }
 
-function closeModal() { 
-    document.getElementById('meal-modal').classList.add('hidden'); 
+function closeModal() {
+    document.getElementById('meal-modal').classList.add('hidden');
     document.body.style.overflow = '';
 }
 
 // ============================================================
-// SWAP MEAL
-// ============================================================
-
-function swapMeal(date, mealType) {
-    const idx = appState.plan.findIndex(p => p.date === date);
-    if (appState.plan[idx].confirmed) return;
-
-    const current = appState.plan[idx].meals[mealType];
-    if (!sessionSkippedIds.includes(current.id)) {
-        sessionSkippedIds.push(current.id);
-        if (sessionSkippedIds.length > 15) sessionSkippedIds.shift();
-    }
-
-    const alt = findAlternativeMeal(current, appState.user.dislikes, current.calories, appState.user.bannedRecipeIds, sessionSkippedIds);
-    if (alt) {
-        alt.excluded = false;
-        appState.plan[idx].meals[mealType] = Object.assign({}, alt, { mealInstanceId: date + '-' + mealType + '-' + Date.now() });
-        debouncedSave();
-        renderDashboard();
-    }
-}
-
-function confirmDay(date) {
-    const idx = appState.plan.findIndex(p => p.date === date);
-    if (idx !== -1) {
-        appState.plan[idx].confirmed = true;
-        debouncedSave();
-        renderDashboard();
-    }
-}
-
-function unlockDay(date) {
-    const idx = appState.plan.findIndex(p => p.date === date);
-    if (idx !== -1) {
-        appState.plan[idx].confirmed = false;
-        debouncedSave();
-        renderDashboard();
-    }
-}
-
-function banRecipe(date, mealType) {
-    const idx = appState.plan.findIndex(p => p.date === date);
-    const meal = appState.plan[idx].meals[mealType];
-    if (confirm(`Non ti piace "${meal.name}"? Non te la proporremo più.`)) {
-        if (!appState.user.bannedRecipeIds.includes(meal.id)) {
-            appState.user.bannedRecipeIds.push(meal.id);
-        }
-        swapMeal(date, mealType);
-    }
-}
-
-// ============================================================
-// PROFILE PAGE
+// PROFILE & SETTINGS
 // ============================================================
 
 function renderProfile() {
@@ -756,8 +765,7 @@ function renderProfile() {
         + '<button class="btn btn-small" onclick="updateProfileField(\'dislikes\', document.getElementById(\'edit-dislikes\').value)">Salva</button>'
         + '</div></div>';
 
-    const pData = document.getElementById('profile-data');
-    if (pData) pData.innerHTML = html;
+    document.getElementById('profile-data').innerHTML = html;
 }
 
 function profileEditCard(label, value, type, field, options) {
@@ -792,51 +800,117 @@ function showInlineEdit(btn, field, type) {
         inputHtml = '<input type="' + type + '" id="inline-edit-' + field + '" value="' + parseFloat(oldValue) + '">';
     }
 
-    row.innerHTML = inputHtml + '<button class="btn-save-inline" onclick="updateProfileField(\'' + field + '\', document.getElementById(\'inline-edit-' + field + '\').value)">✓</button>';
+    row.innerHTML = inputHtml + '<button class="btn-small" onclick="updateProfileField(\'' + field + '\', document.getElementById(\'inline-edit-' + field + '\').value)">OK</button>';
 }
 
-function updateProfileField(field, value) {
-    if (field === 'weight' || field === 'height' || field === 'age' || field === 'activity') {
-        appState.user[field] = parseFloat(value);
+function updateProfileField(field, newValue) {
+    if (field !== 'dislikes') {
+        appState.user[field] = (field === 'goal' || field === 'activity') ? newValue : parseFloat(newValue);
+        
+        // Ricalcola target
+        const bmr            = calculateBMR(appState.user.weight, appState.user.height, appState.user.age, appState.user.gender);
+        const tdee           = calculateTDEE(bmr, appState.user.activity);
+        appState.user.targetCalories = calculateTargetCalories(tdee, appState.user.goal);
     } else {
-        appState.user[field] = value;
+        appState.user.dislikes = newValue;
     }
-    const bmr = calculateBMR(appState.user.weight, appState.user.height, appState.user.age, appState.user.gender);
-    const tdee = calculateTDEE(bmr, appState.user.activity);
-    appState.user.targetCalories = calculateTargetCalories(tdee, appState.user.goal);
+
     debouncedSave();
     renderProfile();
 }
 
-function profileCard(label, value, accent) {
-    return '<div style="background:rgba(0,0,0,0.2);border-radius:12px;padding:1rem;border:1px solid rgba(255,255,255,0.05);">'
-        + '<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem;">' + label + '</div>'
-        + '<div style="font-size:1.1rem;font-weight:700;' + (accent ? 'color:var(--accent-primary);' : '') + '">' + value + '</div>'
+function profileCard(label, value, highlight = false) {
+    return '<div class="profile-edit-card" style="text-align:center;">'
+        + '<div class="label">' + label + '</div>'
+        + '<div class="value" style="' + (highlight ? 'color:var(--accent-primary);font-size:1.2rem;' : '') + '">' + value + '</div>'
         + '</div>';
 }
 
+// ============================================================
+// MEAL OPERATIONS
+// ============================================================
+
+function confirmDay(date) {
+    const idx = appState.plan.findIndex(p => p.date === date);
+    if (idx !== -1) {
+        appState.plan[idx].confirmed = true;
+        debouncedSave();
+        renderDashboard();
+    }
+}
+
+function unlockDay(date) {
+    const idx = appState.plan.findIndex(p => p.date === date);
+    if (idx !== -1) {
+        appState.plan[idx].confirmed = false;
+        debouncedSave();
+        renderDashboard();
+    }
+}
+
+function swapMeal(date, mealType) {
+    const idx = appState.plan.findIndex(p => p.date === date);
+    if (idx !== -1) {
+        const currentMeal = appState.plan[idx].meals[mealType];
+        const newMeal = findAlternativeMeal(currentMeal, appState.user.dislikes, appState.user.targetCalories, appState.user.bannedRecipeIds, sessionSkippedIds);
+        
+        if (newMeal) {
+            newMeal.mealInstanceId = `${date}-${mealType}`;
+            appState.plan[idx].meals[mealType] = newMeal;
+            sessionSkippedIds.push(currentMeal.id);
+            debouncedSave();
+            renderDashboard();
+        } else {
+            alert("Nessuna alternativa trovata con le tue preferenze.");
+        }
+    }
+}
+
+function banRecipe(date, mealType) {
+    const idx = appState.plan.findIndex(p => p.date === date);
+    if (idx !== -1) {
+        const mealId = appState.plan[idx].meals[mealType].id;
+        if (confirm("Non ti proporremo più questa ricetta in futuro. Continuare?")) {
+            if (!appState.user.bannedRecipeIds) appState.user.bannedRecipeIds = [];
+            appState.user.bannedRecipeIds.push(mealId);
+            swapMeal(date, mealType); // Sostituisci subito quella attuale
+        }
+    }
+}
+
+// ============================================================
+// SHOPPING LIST
+// ============================================================
+
 function renderShoppingSelector() {
     const container = document.getElementById('shopping-days-selector');
-    if (!container || !appState.plan) return;
+    if (!container) return;
     container.innerHTML = '';
+    
     const today = getTodayISO();
     const visiblePlan = appState.plan.filter(p => p.date >= today).slice(0, 7);
+
     visiblePlan.forEach(p => {
         const dateObj = new Date(p.date + 'T00:00:00');
-        const dayName = dateObj.toLocaleDateString('it-IT', { weekday: 'short' });
-        const dayNum  = dateObj.getDate();
+        const labelText = dateObj.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric' });
+        
         const label = document.createElement('label');
-        label.style = "display: flex; align-items: center; gap: 0.5rem; cursor: pointer; background: rgba(255,255,255,0.05); padding: 0.5rem 0.8rem; border-radius: 8px; border: 1px solid var(--glass-border);";
-        label.innerHTML = `<input type="checkbox" class="day-checkbox" value="${p.date}" checked> ${dayName} ${dayNum}`;
+        label.style = 'display:flex; align-items:center; gap:0.5rem; background:rgba(255,255,255,0.05); padding:0.5rem 1rem; border-radius:20px; cursor:pointer;';
+        label.innerHTML = `<input type="checkbox" class="day-checkbox" value="${p.date}" checked> ${labelText}`;
         container.appendChild(label);
     });
 }
 
 function generateShoppingList() {
     const selectedDates = Array.from(document.querySelectorAll('.day-checkbox:checked')).map(cb => cb.value);
-    if (selectedDates.length === 0) return;
+    if (selectedDates.length === 0) {
+        document.getElementById('shopping-list-content').innerHTML = '<p class="text-center text-muted">Seleziona almeno un giorno.</p>';
+        return;
+    }
+
     const daysToShop = appState.plan.filter(p => selectedDates.includes(p.date));
     const categories = {};
+
     daysToShop.forEach(dayPlan => {
         const add = meal => {
             if (!meal || meal.excluded) return;
@@ -851,17 +925,44 @@ function generateShoppingList() {
         if (dayPlan.meals.snack) add(dayPlan.meals.snack);
         add(dayPlan.meals.lunch);
     });
-    let html = '<h3 style="margin-bottom:1.5rem;text-align:center;">Lista della Spesa</h3>';
+
+    if (Object.keys(categories).length === 0) {
+        document.getElementById('shopping-list-content').innerHTML = '<p class="text-center text-muted">Nessun ingrediente trovato.</p>';
+        return;
+    }
+
     const icons = { 'Ortofrutta': '🥬', 'Carne e Pesce': '🥩', 'Latticini': '🧀', 'Dispensa': '🥫', 'Panetteria': '🍞', 'Altro': '🛒' };
+    
+    let html = '<h3 style="margin-bottom:1.5rem;text-align:center;">Lista della Spesa</h3>';
+    html += '<p class="text-center text-muted" style="margin-bottom:2rem;font-size:0.9rem;">Ingredienti combinati per i giorni selezionati.</p>';
+
     Object.keys(categories).sort().forEach(cat => {
-        html += '<div style="margin-bottom:2rem;"><h4>' + (icons[cat] || '🛒') + ' ' + cat + '</h4><ul class="ingredient-list">';
-        Object.values(categories[cat]).forEach((item, i) => {
-            html += '<li class="ingredient-item">' + item.name + ': ' + Math.round(item.amount) + ' ' + item.unit + '</li>';
+        html += '<div class="category-section" style="margin-bottom:2rem;">'
+            + '<h4 style="color:var(--accent-primary);border-bottom:1px solid var(--glass-border);padding-bottom:0.5rem;margin-bottom:1rem;">'
+            + (icons[cat] || '🛒') + ' ' + cat + '</h4><ul class="ingredient-list">';
+
+        Object.values(categories[cat]).sort((a,b) => a.name.localeCompare(b.name)).forEach((item, i) => {
+            const uid = ('ing-' + cat + '-' + i).replace(/\s+/g, '-');
+            html += '<li class="ingredient-item"><div style="display:flex;align-items:center;">'
+                + '<input type="checkbox" class="ingredient-checkbox" id="' + uid + '">'
+                + '<label for="' + uid + '" style="font-weight:500;cursor:pointer;">' + item.name + '</label></div>'
+                + '<span style="color:var(--accent-primary);">' + Math.round(item.amount) + ' ' + item.unit + '</span></li>';
         });
         html += '</ul></div>';
     });
+
     document.getElementById('shopping-list-content').innerHTML = html;
+
+    document.querySelectorAll('.ingredient-checkbox').forEach(cb => {
+        cb.addEventListener('change', e => {
+            e.target.closest('.ingredient-item').classList.toggle('crossed', e.target.checked);
+        });
+    });
 }
+
+// ============================================================
+// MONTHLY CALENDAR
+// ============================================================
 
 function renderMonthlyCalendar() {
     const container = document.getElementById('monthly-calendar-container');
@@ -903,33 +1004,37 @@ function renderMonthlyCalendar() {
         const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dayPlan = appState.plan.find(p => p.date === dateStr);
         const isToday = dateStr === todayStr;
-        const dayName = weekDays[new Date(currentYear, currentMonth, day).getDay() === 0 ? 6 : new Date(currentYear, currentMonth, day).getDay() - 1];
+        const dObj = new Date(currentYear, currentMonth, day);
+        const dayIdx = dObj.getDay() === 0 ? 6 : dObj.getDay() - 1;
+        const dayName = weekDays[dayIdx];
 
         html += `<div class="calendar-day-cell ${isToday ? 'is-today' : ''}">
             <div class="calendar-date-number">
-                <span class="mobile-day-name" style="width:2.5rem; font-weight:normal; opacity:0.7;">${dayName}</span>
+                <span class="mobile-day-header" style="display:none; font-size:0.6rem; opacity:0.6; margin-right:4px;">${dayName}</span>
                 ${day}
             </div>`;
         
         if (dayPlan && dayPlan.meals) {
             const m = dayPlan.meals;
+            // Mostriamo solo icone se lo spazio è pochissimo (gestito via CSS), 
+            // ma qui iniettiamo il testo completo per accessibilità
             if (m.breakfast) {
-                html += `<div class="calendar-meal-chip breakfast" onclick="openMealDetails('${dateStr}', 'breakfast')">
-                    <span>☕</span> <span>${m.breakfast.name}</span>
+                html += `<div class="calendar-meal-chip breakfast" onclick="openMealDetails('${dateStr}', 'breakfast')" title="${m.breakfast.name}">
+                    <span class="meal-icon">☕</span> <span class="meal-text">${m.breakfast.name}</span>
                 </div>`;
             }
             if (m.lunch) {
-                html += `<div class="calendar-meal-chip lunch" onclick="openMealDetails('${dateStr}', 'lunch')">
-                    <span>🍝</span> <span>${m.lunch.name}</span>
+                html += `<div class="calendar-meal-chip lunch" onclick="openMealDetails('${dateStr}', 'lunch')" title="${m.lunch.name}">
+                    <span class="meal-icon">🍝</span> <span class="meal-text">${m.lunch.name}</span>
                 </div>`;
             }
             if (m.snack) {
-                html += `<div class="calendar-meal-chip snack" onclick="openMealDetails('${dateStr}', 'snack')">
-                    <span>🍎</span> <span>${m.snack.name}</span>
+                html += `<div class="calendar-meal-chip snack" onclick="openMealDetails('${dateStr}', 'snack')" title="${m.snack.name}">
+                    <span class="meal-icon">🍎</span> <span class="meal-text">${m.snack.name}</span>
                 </div>`;
             }
             if (dayPlan.confirmed) {
-                html += `<div style="font-size:0.55rem; text-align:right; color:#4ade80; margin-top:auto; font-weight:bold; letter-spacing:0.05em;">✅ CONFERMATO</div>`;
+                html += `<div class="confirmed-indicator">✅</div>`;
             }
         }
         
