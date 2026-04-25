@@ -414,27 +414,28 @@ input:focus, select:focus, textarea:focus {
 
 .meals-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1rem;
-    padding: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1.25rem;
 }
 
 .meal-card {
-    background: rgba(0,0,0,0.2);
-    border-radius: var(--border-radius-md);
-    padding: 1.25rem;
-    border: 1px solid rgba(255,255,255,0.05);
+    background: var(--glass-bg);
+    border-radius: 16px;
+    padding: 1.5rem;
+    border: 1px solid var(--glass-border);
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     flex-direction: column;
-    overflow: visible;
+    position: relative;
+    overflow: hidden;
 }
 
 .meal-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    background: rgba(255,255,255,0.05);
+    transform: translateY(-4px) scale(1.02);
+    border-color: var(--accent-primary);
+    box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.3), var(--shadow-glow);
+    background: rgba(30, 41, 59, 0.9);
 }
 
 .meal-card img {
@@ -665,12 +666,29 @@ input:focus, select:focus, textarea:focus {
 }
 
 .ingredient-item {
-    background: rgba(0,0,0,0.2);
-    padding: 1rem;
-    border-radius: var(--border-radius-md);
+    background: rgba(255, 255, 255, 0.03);
+    padding: 0.85rem 1.1rem;
+    border-radius: 12px;
     display: flex;
     justify-content: space-between;
-    border: 1px solid rgba(255,255,255,0.05);
+    align-items: center;
+    border: 1px solid var(--glass-border);
+    transition: background 0.2s;
+}
+
+.ingredient-item label {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    flex: 1;
+    min-width: 0;
+}
+
+.ingredient-item span {
+    font-size: 0.95rem;
+    white-space: normal; /* Ensure wrapping */
+    word-break: break-word;
 }
 
 @media (max-width: 768px) {
@@ -798,305 +816,96 @@ input:focus, select:focus, textarea:focus {
     padding-top: 1rem;
     border-top: 1px solid var(--glass-border);
     display: flex;
-    justify-content: center;
 }
 
-.btn-confirm-day, .btn-unlock-day {
-    background: rgba(74, 222, 128, 0.1);
-    border: 1px solid #4ade80;
-    color: #4ade80;
-    padding: 0.6rem 1.2rem;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: all 0.2s;
-    width: 100%;
-}
-
-.btn-confirm-day:hover {
-    background: #4ade80;
-    color: #000;
-}
-
-.btn-unlock-day {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: var(--glass-border);
-    color: var(--text-secondary);
-}
-
-.btn-unlock-day:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-primary);
-}
-
-.confirmed-label {
-    font-size: 0.7rem;
-    color: #4ade80;
-    font-weight: 700;
-    text-transform: uppercase;
-    margin-left: 0.5rem;
-}
-
+/* Monthly Calendar Enhancements */
 .calendar-month-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 1px;
-    background: var(--glass-border);
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 20px;
+    padding: 12px;
     border: 1px solid var(--glass-border);
-    border-radius: var(--border-radius-md);
-    overflow: hidden;
-    /* Rimosso min-width per permettere il resize responsivo */
 }
 
 .calendar-day-header {
-    background: rgba(0,0,0,0.3); 
-    padding: 0.75rem 0.5rem; 
-    text-align: center; 
-    font-size: 0.8rem; 
-    font-weight: 700; 
+    text-align: center;
+    padding: 12px 4px;
+    font-size: 0.8rem;
+    font-weight: 800;
     color: var(--text-secondary);
     text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .calendar-day-cell {
-    background: rgba(0,0,0,0.2); 
-    min-height: 110px; 
-    padding: 0.6rem 0.5rem; 
-    display: flex; 
-    flex-direction: column; 
-    gap: 0.35rem; 
-    border: 1px solid transparent;
-    transition: all 0.2s ease;
-    min-width: 0;
-    overflow: hidden;
-    box-sizing: border-box;
+    aspect-ratio: 1 / 1.1;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    padding: 8px;
+    border: 1px solid var(--glass-border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: all 0.2s;
+    min-height: 100px;
+}
+
+.calendar-day-cell:hover:not(.empty) {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(16, 185, 129, 0.3);
 }
 
 .calendar-day-cell.is-today {
-    border-color: var(--accent-primary); 
-    background: rgba(16, 185, 129, 0.05);
+    background: rgba(16, 185, 129, 0.08);
+    border-color: var(--accent-primary);
+    box-shadow: inset 0 0 10px rgba(16, 185, 129, 0.1);
 }
 
 .calendar-date-number {
-    font-size: 0.85rem; 
-    font-weight: 700; 
-    color: var(--text-secondary); 
-    margin-bottom: 0.25rem;
-}
-.calendar-day-cell.is-today .calendar-date-number {
-    color: var(--accent-primary);
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin-bottom: 4px;
 }
 
 .calendar-meal-chip {
-    font-size: 0.7rem; 
-    padding: 4px 6px; 
-    border-radius: 6px; 
-    white-space: nowrap; 
-    overflow: hidden; 
-    text-overflow: ellipsis; 
+    font-size: 0.65rem;
+    padding: 3px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid transparent;
     cursor: pointer;
+    transition: transform 0.1s;
     display: flex;
     align-items: center;
     gap: 4px;
-    transition: transform 0.2s ease, opacity 0.2s ease;
 }
+
 .calendar-meal-chip:hover {
-    transform: scale(1.02);
-    opacity: 0.9;
-}
-.calendar-meal-chip.breakfast { background: rgba(16, 185, 129, 0.15); color: #4ade80; }
-.calendar-meal-chip.lunch { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
-.calendar-meal-chip.snack { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
-.calendar-meal-chip.dinner { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
-/* Mobile Responsive Updates */
-@media (max-width: 850px) {
-    .header-container {
-        grid-template-columns: 1fr auto; /* Logo left, toggle right */
-    }
-
-    #main-nav {
-        position: fixed;
-        top: 0;
-        right: -100%;
-        width: 80%;
-        max-width: 300px;
-        height: 100vh;
-        background: var(--bg-secondary);
-        z-index: 2000;
-        flex-direction: column;
-        padding: 4rem 1.5rem 2rem;
-        transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-        display: flex;
-        border-left: 1px solid var(--glass-border);
-        box-shadow: -10px 0 30px rgba(0,0,0,0.5);
-    }
-
-    #main-nav.mobile-active {
-        right: 0;
-    }
-
-    .nav-links {
-        flex-direction: column;
-        width: 100%;
-        gap: 1rem;
-    }
-
-    #main-nav button {
-        width: 100%;
-        justify-content: flex-start;
-        font-size: 1.1rem;
-        padding: 1rem;
-    }
-
-    #btn-logout {
-        margin-top: auto;
-        width: 100%;
-    }
-
-    /* Monthly Calendar Mobile */
-    .calendar-month-grid {
-        grid-template-columns: repeat(7, 1fr);
-    }
-    
-    .calendar-day-header span {
-        display: none; /* Hide full day names */
-    }
-    .calendar-day-header::after {
-        content: attr(data-short); /* Show short day names */
-    }
-    
-    .calendar-meal-chip span {
-        display: none;
-    }
-    .calendar-meal-chip {
-        justify-content: center;
-        padding: 6px 0;
-    }
-
-    .day-card {
-        margin-bottom: 1.5rem;
-    }
+    transform: scale(1.05);
+    z-index: 2;
+    background: rgba(255, 255, 255, 0.1);
 }
 
-@media (min-width: 851px) {
-    #mobile-menu-toggle {
-        display: none;
-    }
-    #main-nav.hidden {
-        display: flex !important;
-    }
+.calendar-meal-chip.confirmed {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.3);
+    color: #4ade80;
 }
 
-@media (max-width: 768px) {
-    main { padding: 1rem 3%; }
-    .form-grid { grid-template-columns: 1fr; }
-    .dashboard-header { flex-direction: column; align-items: flex-start; gap: 1rem; }
-    
-    .modal-content {
-        width: 100%;
-        height: 92vh; 
-        border-left: none;
-        border-top: 1px solid var(--glass-border);
-        border-radius: 24px 24px 0 0;
-        transform: translateY(100%);
-    }
-    
-    .modal:not(.hidden) .modal-content {
-        transform: translateY(0);
-        transform: translateX(0);
-    }
-
-    /* Trasforma il calendario in una lista verticale su mobile */
-    .calendar-day-header {
-        display: block; /* Ripristina i giorni in alto */
-        font-size: 0.6rem;
-        padding: 0.5rem 0;
-    }
-    .calendar-month-grid {
-        grid-template-columns: repeat(7, 1fr); /* Mantieni griglia 7 col su mobile ma compatta */
-        gap: 2px;
-    }
-    .calendar-day-cell {
-        min-height: 80px;
-        padding: 0.3rem;
-    }
-    .calendar-date-number {
-        font-size: 0.75rem;
-        margin-bottom: 0.2rem;
-        border: none;
-    }
-    .calendar-meal-chip {
-        font-size: 0.55rem;
-        padding: 2px 4px;
-    }
-    .mobile-day-name {
-        display: none !important; /* Non serve se abbiamo i giorni in alto */
-    }
-
-    /* Navigazione Mobile */
-    .mobile-only {
-        display: flex;
-    }
-
-    #main-nav {
-        position: fixed;
-        top: 0;
-        right: -100%;
-        width: 80%;
-        height: 100vh;
-        background: rgba(13, 17, 23, 0.98);
-        backdrop-filter: blur(20px);
-        flex-direction: column;
-        justify-content: center;
-        gap: 2rem;
-        padding: 2rem;
-        transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        z-index: 1000;
-        border-left: 1px solid var(--glass-border);
-        box-shadow: -10px 0 30px rgba(0,0,0,0.5);
-    }
-
-    #main-nav.mobile-active {
-        right: 0;
-    }
-
-    .nav-links {
-        flex-direction: column;
-        width: 100%;
-        gap: 1rem;
-    }
-
-    #main-nav button {
-        width: 100%;
-        padding: 1.2rem;
-        font-size: 1.1rem;
-        justify-content: flex-start;
-    }
-
-    #btn-logout {
-        margin-top: 2rem;
-    }
-
-    .recipe-body { padding: 1.5rem; }
-    .recipe-meta { gap: 1rem; }
-    .meta-item .value { font-size: 1rem; }
+/* Responsive Calendar */
+@media (max-width: 900px) {
+    .calendar-day-header span { display: none; }
+    .calendar-day-header::after { content: attr(data-short); }
 }
 
-.recipe-source-container {
-    margin-top: 2rem;
-    padding: 1.5rem;
-    background: rgba(255,255,255,0.03);
-    border-radius: 12px;
-    text-align: center;
-}
-
-.recipe-source-link {
-    color: var(--accent-primary);
-    text-decoration: none;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
+@media (max-width: 600px) {
+    .calendar-month-grid { gap: 4px; padding: 6px; }
+    .calendar-day-cell { min-height: 70px; padding: 4px; }
+    .calendar-meal-chip span { display: none; }
+    .calendar-meal-chip { justify-content: center; width: fit-content; }
 }

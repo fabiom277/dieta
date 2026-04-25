@@ -1,241 +1,79 @@
-// --- APP STATE ---
-let appState = { user: null, plan: [] };
-let currentUser = null; 
-let saveTimeout = null;
-let sessionSkippedIds = []; 
-let recipesLoaded = false;
+const appState = {
+    user: JSON.parse(localStorage.getItem('nutriplan_user')) || null,
+    plan: JSON.parse(localStorage.getItem('nutriplan_plan')) || [],
+    shoppingList: [],
+    view: 'dashboard'
+};
 
-// --- UTILS ---
-function hideLoader() {
-    const loader = document.getElementById('global-loader');
-    if (loader) {
-        loader.style.opacity = '0';
-        setTimeout(() => {
-            loader.style.display = 'none';
-        }, 500);
-    }
-}
-
-// --- DOM REFS ---
-let mainNav;
-
-function initDomRefs() {
-    mainNav = document.getElementById('main-nav');
-}
+const supabaseClient = window.supabase ? window.supabase.createClient(
+    window.CONFIG.SUPABASE_URL,
+    window.CONFIG.SUPABASE_ANON_KEY
+) : null;
 
 // ============================================================
-// AUTH
+// Auth & Initialization
 // ============================================================
 
-async function handleLoginSubmit(e) {
-    e.preventDefault();
-    const email = document.getElementById('login-email').value;
-    const password = document.getElementById('login-password').value;
-    const errorEl = document.getElementById('auth-error');
-    const submitBtn = document.getElementById('login-submit');
-
-    errorEl.classList.add('hidden');
-    submitBtn.disabled = true;
-    submitBtn.innerText = 'Accesso in corso...';
-
-    try {
-        const { error } = await _supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-    } catch (err) {
-        errorEl.innerText = "Errore: " + err.message;
-        errorEl.classList.remove('hidden');
-        submitBtn.disabled = false;
-        submitBtn.innerText = 'Accedi';
-    }
-}
-
-async function handleOnboardingSubmit(e) {
-    e.preventDefault();
-    const submitBtn = e.target.querySelector('button[type="submit"]');
-    const originalText = submitBtn.innerText;
+async function initApp() {
+    console.log('App Initializing...');
     
-    // Account Data
-    const email = document.getElementById('reg-email').value;
-    const password = document.getElementById('reg-password').value;
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (session) {
+        appState.user = {
+            ...appState.user,
+            id: session.user.id,
+            email: session.user.email
+        };
+        await syncFromSupabase();
+    }
 
-    // Profile Data
-    const profileData = {
-        gender: document.getElementById('gender').value,
-        age: parseInt(document.getElementById('age').value),
-        weight: parseFloat(document.getElementById('weight').value),
-        height: parseInt(document.getElementById('height').value),
-        activity: parseFloat(document.getElementById('activity').value),
-        goal: document.getElementById('goal').value,
-        diet_type: document.getElementById('diet-type').value,
-        eating_pattern: document.getElementById('eating-pattern').value,
-        dislikes: document.getElementById('dislikes').value
-    };
-
-    const errorEl = document.getElementById('onboarding-error');
-    if (errorEl) errorEl.classList.add('hidden');
-    submitBtn.disabled = true;
-    submitBtn.innerText = 'Elaborazione...';
-
-    try {
-        let userId = currentUser?.id;
-
-        // 1. Sign Up ONLY if not logged in
-        if (!userId) {
-            const { data: authData, error: authError } = await _supabase.auth.signUp({ 
-                email, 
-                password,
-                options: { data: { first_setup: true } }
-            });
-
-            if (authError) throw authError;
-            if (!authData.user) throw new Error("Errore durante la creazione dell'account.");
-            userId = authData.user.id;
-        }
-
-        // 2. Prepare Plan
-        if (!recipesLoaded) await fetchRecipesFromSupabase();
-        
-        const bmr = calculateBMR(profileData.weight, profileData.height, profileData.age, profileData.gender);
-        profileData.targetCalories = calculateTargetCalories(calculateTDEE(bmr, profileData.activity), profileData.goal);
-        
-        const plan = generateMonthlyPlan(profileData);
-
-        // 3. Save to user_data
-        const { error: dbError } = await _supabase.from('user_data').upsert({
-            id: userId,
-            nutrition_profile: profileData,
-            meal_plan: plan,
-            updated_at: new Date().toISOString()
-        });
-
-        if (dbError) {
-            console.error("Database error:", dbError);
-        }
-
-        appState.user = profileData;
-        appState.plan = plan;
-        currentUser = currentUser || { id: userId };
+    if (!appState.user) {
+        showView('onboarding');
+    } else if (appState.plan.length === 0) {
+        showView('onboarding');
+    } else {
         showView('dashboard');
-        
-    } catch (err) {
-        if (errorEl) {
-            errorEl.innerText = "Errore: " + err.message;
-            errorEl.classList.remove('hidden');
-        } else {
-            alert("Errore: " + err.message);
-        }
-        submitBtn.disabled = false;
-        submitBtn.innerText = originalText;
     }
+
+    setupNav();
 }
 
-// ============================================================
-// DATA LOADING
-// ============================================================
-
-async function fetchRecipesFromSupabase() {
-    try {
-        const { data, error } = await _supabase.from('recipes').select('*');
-        if (error) throw error;
-        
-        const normalized = data.map(r => ({
-            ...r,
-            baseCalories: r.base_calories,
-            imageUrl: r.image_url,
-            sourceUrl: r.source_url
-        }));
-
-        recipesDB = normalized.filter(r => r.type !== 'snack');
-        snacksDB = normalized.filter(r => r.type === 'snack');
-        recipesLoaded = true;
-        return true;
-    } catch (err) {
-        console.error("Fetch error:", err);
-        return false;
-    }
-}
-
-async function saveToCloud() {
-    if (!currentUser) return;
-    await _supabase.from('user_data').upsert({
-        id: currentUser.id,
-        nutrition_profile: appState.user,
-        meal_plan: appState.plan,
-        updated_at: new Date().toISOString()
+function setupNav() {
+    document.querySelectorAll('#main-nav button').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const view = e.currentTarget.id.replace('btn-', '');
+            showView(view);
+        });
     });
-}
-
-function debouncedSave() {
-    clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(saveToCloud, 1000);
-}
-
-async function loadFromCloud() {
-    if (!currentUser) return false;
-    const { data, error } = await _supabase.from('user_data').select('*').eq('id', currentUser.id).single();
-    if (error || !data) return false;
-    appState.user = data.nutrition_profile;
-    appState.plan = data.meal_plan || [];
-    return true;
+    
+    document.getElementById('btn-logout').addEventListener('click', handleLogout);
 }
 
 // ============================================================
-// NAVIGATION & VIEWS
+// Navigation & Views
 // ============================================================
 
 function showView(viewName) {
-    const views = ['auth', 'onboarding', 'dashboard', 'shopping', 'profile', 'calendar', 'admin'];
-    views.forEach(v => {
-        const el = document.getElementById(`view-${v}`);
-        if (el) el.classList.add('hidden');
-    });
-
+    appState.view = viewName;
+    
+    document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
     const target = document.getElementById(`view-${viewName}`);
     if (target) target.classList.remove('hidden');
 
-    // Hide account section if already logged in (e.g. during profile reset)
-    const accountSection = document.querySelector('#onboarding-form div[style*="border-top"]');
-    if (accountSection) {
-        if (currentUser) {
-            accountSection.classList.add('hidden');
-            document.getElementById('reg-email').required = false;
-            document.getElementById('reg-password').required = false;
-        } else {
-            accountSection.classList.remove('hidden');
-            document.getElementById('reg-email').required = true;
-            document.getElementById('reg-password').required = true;
-        }
-    }
+    document.querySelectorAll('#main-nav button').forEach(btn => {
+        btn.classList.toggle('active', btn.id === `btn-${viewName}`);
+    });
 
     if (viewName === 'dashboard') renderDashboard();
     if (viewName === 'calendar') renderMonthlyCalendar();
-    if (viewName === 'shopping') {
-        setupShoppingDaysSelector();
-        renderShoppingList();
-    }
+    if (viewName === 'shopping') renderShoppingList();
     if (viewName === 'profile') renderProfile();
-    if (viewName === 'admin') admin.init();
-
-    // Toggle menu visibility
-    if (['auth', 'onboarding'].includes(viewName)) {
-        document.getElementById('main-nav').classList.add('hidden');
-    } else {
-        document.getElementById('main-nav').classList.remove('hidden');
-        
-        // Update active state of nav buttons
-        document.querySelectorAll('.nav-links button').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        const activeBtn = document.getElementById(`nav-${viewName}`);
-        if (activeBtn) activeBtn.classList.add('active');
-    }
     
-    // Close mobile menu if open
-    document.getElementById('main-nav').classList.remove('mobile-active');
+    window.scrollTo(0, 0);
 }
 
 // ============================================================
-// DASHBOARD
+// Dashboard Rendering
 // ============================================================
 
 function renderDashboard() {
@@ -260,28 +98,36 @@ function renderDashboard() {
     const visiblePlan = appState.plan.filter(p => p.date >= today).slice(0, 7);
 
     let html = `
-        <div class="dashboard-header">
+        <div class="dashboard-header" style="margin-bottom: 3rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 2rem;">
             <div>
-                <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;">Ciao! 👋</h1>
-                <p class="text-muted">Ecco il tuo piano alimentare per la settimana.</p>
-                <p id="caloric-info" style="margin-top:0.5rem; color:var(--accent-primary); font-weight:700;">Target: ${appState.user.targetCalories} kcal/giorno</p>
+                <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem; letter-spacing: -0.03em;">Il Tuo Piano <span class="highlight">Settimanale</span></h1>
+                <div style="display: flex; gap: 1.5rem; margin-top: 1rem; align-items: center;">
+                    <p class="text-muted" style="font-size: 1.1rem;">Settimana del ${new Date(visiblePlan[0].date).toLocaleDateString('it-IT', { day: 'numeric', month: 'long' })}</p>
+                    <div style="background: rgba(16, 185, 129, 0.1); padding: 0.4rem 1rem; border-radius: 50px; border: 1px solid rgba(16, 185, 129, 0.2); font-weight: 700; color: var(--accent-primary);">
+                        🎯 ${appState.user.targetCalories} kcal / giorno
+                    </div>
+                </div>
             </div>
         </div>
     `;
 
-    html += `<div class="calendar-grid">`;
+    html += `<div class="calendar-grid" style="display: flex; flex-direction: column; gap: 2.5rem;">`;
 
     visiblePlan.forEach(day => {
         let totalCals = 0;
         Object.values(day.meals).forEach(m => totalCals += (m.calories || 0));
+        const isToday = day.date === today;
 
         html += `
-            <div class="day-card ${day.date === today ? 'today' : ''}">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; border-bottom:1px solid var(--glass-border); padding-bottom:1rem;">
-                    <h2 style="text-transform:capitalize;">${new Date(day.date + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'short' })}</h2>
-                    <span style="font-weight:800; color:var(--accent-primary);">${Math.round(totalCals)} kcal</span>
+            <div class="day-section" style="${isToday ? 'background: rgba(16, 185, 129, 0.03); border-radius: 20px; padding: 1.5rem; border: 1px solid rgba(16, 185, 129, 0.1);' : ''}">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+                    <h2 style="text-transform:capitalize; font-size: 1.5rem; display: flex; align-items: center; gap: 0.75rem;">
+                        ${isToday ? '<span style="background: var(--accent-primary); color: #fff; font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; vertical-align: middle;">OGGI</span>' : ''}
+                        ${new Date(day.date + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'short' })}
+                    </h2>
+                    <span style="font-weight:800; font-size: 1.2rem; color: var(--text-secondary); opacity: 0.8;">${Math.round(totalCals)} <span style="font-size: 0.8rem; font-weight: 500;">kcal totali</span></span>
                 </div>
-                <div class="meals-grid">
+                <div class="meals-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem;">
                     ${renderMealSlot(day.date, 'breakfast', day.meals.breakfast)}
                     ${renderMealSlot(day.date, 'snack', day.meals.snack)}
                     ${renderMealSlot(day.date, 'lunch', day.meals.lunch)}
@@ -300,90 +146,105 @@ function renderMealSlot(date, type, meal) {
     const labels = { breakfast: 'Colazione', snack: 'Spuntino', lunch: 'Pranzo', dinner: 'Cena' };
     
     return `
-        <div class="meal-card" onclick="openMealDetails('${date}', '${type}')">
-            <div class="meal-tag">${labels[type]}</div>
-            <h3 style="margin-bottom:0.5rem; font-size:1.1rem;">${meal.name}</h3>
-            ${meal.portion > 1.05 ? `<span class="portion-badge">Dose x${meal.portion.toFixed(1)}</span>` : ''}
-            ${meal.smartAddition ? `<div class="smart-addition-tag">+ ${meal.smartAddition.amount}${meal.smartAddition.unit} ${meal.smartAddition.name}</div>` : ''}
-            <div style="display:flex; gap:1rem; margin-top:1rem; font-size:0.8rem; opacity:0.7;">
-                <span>🔥 ${Math.round(meal.calories)} kcal</span>
-                <span>🥩 ${Math.round(meal.macros.protein * (meal.portion || 1))}g</span>
+        <div class="meal-card" onclick="openMealDetails('${date}', '${type}')" style="background: var(--glass-bg); border: 1px solid var(--glass-border); padding: 1.5rem; border-radius: 16px; transition: all 0.2s ease; position: relative; overflow: hidden;">
+            <div class="meal-tag" style="font-size: 0.7rem; color: var(--accent-primary); font-weight: 800; margin-bottom: 0.75rem; letter-spacing: 0.05em;">${labels[type].toUpperCase()}</div>
+            <h3 style="margin-bottom:0.75rem; font-size:1.15rem; line-height: 1.3; font-weight: 700;">${meal.name}</h3>
+            
+            ${meal.smartAddition ? `<div class="smart-addition-tag" style="background: rgba(59, 130, 246, 0.1); color: #60a5fa; font-size: 0.75rem; padding: 4px 8px; border-radius: 6px; margin-bottom: 1rem; border: 1px solid rgba(59, 130, 246, 0.1);">+ ${meal.smartAddition.amount}${meal.smartAddition.unit} ${meal.smartAddition.name}</div>` : ''}
+            
+            <div style="display:flex; gap:1.25rem; margin-top:auto; font-size:0.85rem; font-weight: 600; color: var(--text-secondary);">
+                <span>🔥 ${Math.round(meal.calories)} <span style="font-size: 0.7rem; opacity: 0.7;">kcal</span></span>
+                <span>🥩 ${Math.round(meal.macros.protein * (meal.portion || 1))}g <span style="font-size: 0.7rem; opacity: 0.7;">pro</span></span>
             </div>
-            <div style="display:flex; gap:0.5rem; margin-top:1rem;">
-                <button class="btn-swap btn-outline" style="padding:0.4rem 0.8rem; font-size:0.8rem; border-color:${meal.confirmed ? '#10b981' : ''}; color:${meal.confirmed ? '#10b981' : ''};" onclick="event.stopPropagation(); confirmMeal('${date}', '${type}')">
-                    ${meal.confirmed ? '✓ Fatto' : 'Conferma'}
+
+            <div style="display:flex; gap:0.5rem; margin-top:1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05);">
+                <button class="btn-swap" style="flex: 1; background: ${meal.confirmed ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.05)'}; color: ${meal.confirmed ? 'var(--accent-primary)' : 'var(--text-primary)'}; border: 1px solid ${meal.confirmed ? 'rgba(16, 185, 129, 0.3)' : 'var(--glass-border)'}; padding: 0.5rem; border-radius: 8px; font-size: 0.8rem; font-weight: 700; cursor: pointer;" onclick="event.stopPropagation(); confirmMeal('${date}', '${type}')">
+                    ${meal.confirmed ? '✓ Confermata' : 'Conferma'}
                 </button>
-                <button class="btn-swap btn-outline" style="padding:0.4rem 0.8rem; font-size:0.8rem;" onclick="event.stopPropagation(); swapMeal('${date}', '${type}')">Cambia</button>
+                <button class="btn-swap" style="background: rgba(255,255,255,0.05); color: var(--text-secondary); border: 1px solid var(--glass-border); padding: 0.5rem 0.75rem; border-radius: 8px; font-size: 0.8rem; cursor: pointer;" onclick="event.stopPropagation(); swapMeal('${date}', '${type}')">🔄</button>
             </div>
         </div>
     `;
 }
 
-function openMealDetails(date, mealType) {
-    const dayPlan = appState.plan.find(p => p.date === date);
-    const meal    = dayPlan.meals[mealType];
-    const labels  = { breakfast: 'Colazione', lunch: 'Pranzo', snack: 'Spuntino', dinner: 'Cena' };
-    const portion = meal.portion || 1.0;
+function openMealDetails(date, type) {
+    const day = appState.plan.find(p => p.date === date);
+    if (!day) return;
+    const meal = day.meals[type];
+    if (!meal) return;
 
-    let html = '';
-    if (meal.imageUrl) html += `<img src="${meal.imageUrl}" class="recipe-header-img" alt="${meal.name}">`;
+    const modal = document.getElementById('recipe-modal');
+    const body = document.getElementById('recipe-detail-body');
+    
+    // Use recipe steps or fallback
+    const stepsHtml = meal.instructions ? 
+        meal.instructions.map((s, i) => `<li>${s}</li>`).join('') : 
+        '<li>Nessuna istruzione disponibile per questa ricetta.</li>';
 
-    let additionHtml = '';
-    if (meal.smartAddition) {
-        additionHtml = `
-            <div style="background:rgba(16, 185, 129, 0.1); border-left:4px solid var(--accent-primary); padding:1rem; margin:1rem 0; border-radius:8px;">
-                <h4 style="color:var(--accent-primary); margin-bottom:0.3rem;">💡 Integrazione Consigliata</h4>
-                <p style="font-size:0.9rem;">Per raggiungere il tuo target, aggiungi: <strong>${meal.smartAddition.amount}${meal.smartAddition.unit} di ${meal.smartAddition.name}</strong>.</p>
+    body.innerHTML = `
+        <img src="${meal.image || 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&q=80&w=800'}" class="recipe-header-img" alt="${meal.name}">
+        <div class="recipe-body">
+            <h2 style="font-size: 2rem; margin-bottom: 1.5rem;">${meal.name}</h2>
+            
+            <div class="recipe-meta">
+                <div class="meta-item">
+                    <span class="label">Calorie</span>
+                    <span class="value">${Math.round(meal.calories)} kcal</span>
+                </div>
+                <div class="meta-item">
+                    <span class="label">Proteine</span>
+                    <span class="value">${Math.round(meal.macros.protein * (meal.portion || 1))}g</span>
+                </div>
+                <div class="meta-item">
+                    <span class="label">Carboidrati</span>
+                    <span class="value">${Math.round(meal.macros.carbs * (meal.portion || 1))}g</span>
+                </div>
+                <div class="meta-item">
+                    <span class="label">Grassi</span>
+                    <span class="value">${Math.round(meal.macros.fat * (meal.portion || 1))}g</span>
+                </div>
             </div>
-        `;
-    }
 
-    html += `<div class="recipe-body">
-        <div class="meal-tag">${labels[mealType]} ${portion > 1.05 ? `(x${portion.toFixed(1)})` : ''}</div>
-        <h2 style="font-size:2rem; margin-bottom:1rem;">${meal.name}</h2>
-        
-        <div class="recipe-meta">
-            <div class="meta-item"><span class="label">Calorie</span><span class="value">${Math.round(meal.calories)}</span></div>
-            <div class="meta-item"><span class="label">Prot</span><span class="value">${Math.round(meal.macros.protein * portion)}g</span></div>
-            <div class="meta-item"><span class="label">Carb</span><span class="value">${Math.round(meal.macros.carbs * portion)}g</span></div>
-            <div class="meta-item"><span class="label">Fat</span><span class="value">${Math.round(meal.macros.fat * portion)}g</span></div>
+            <div class="recipe-section">
+                <h4>🥗 Ingredienti</h4>
+                <div style="display:grid; gap:0.5rem;">
+                    ${meal.ingredients.map(ing => `
+                        <div class="ingredient-check-item">
+                            <input type="checkbox">
+                            <span>${Math.round(ing.amount * (meal.portion || 1))} ${ing.unit} ${ing.name}</span>
+                        </div>
+                    `).join('')}
+                    ${meal.smartAddition ? `
+                        <div class="ingredient-check-item" style="border: 1px dashed var(--accent-primary);">
+                            <input type="checkbox">
+                            <span style="color:var(--accent-primary);">+ ${meal.smartAddition.amount}${meal.smartAddition.unit} ${meal.smartAddition.name} (Aggiunta Smart)</span>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+
+            <div class="recipe-section">
+                <h4>👨‍🍳 Preparazione</h4>
+                <ol>${stepsHtml}</ol>
+            </div>
+            
+            ${meal.sourceUrl ? `
+                <div style="margin-top:2rem; padding-top:1.5rem; border-top:1px solid var(--glass-border);">
+                    <a href="${meal.sourceUrl}" target="_blank" class="btn btn-outline" style="width:100%;">Vedi Ricetta Originale</a>
+                </div>
+            ` : ''}
         </div>
-
-        ${additionHtml}
-
-        <div class="recipe-section">
-            <h4>Ingredienti</h4>
-            <ul style="list-style:none;">
-                ${meal.ingredients.map(i => {
-                    const amt = isNaN(parseFloat(i.amount)) ? i.amount : (parseFloat(i.amount) * portion).toFixed(0);
-                    return `<li style="padding:0.5rem 0; border-bottom:1px solid var(--glass-border); display:flex; justify-content:space-between;">
-                        <span>${i.name}</span>
-                        <span style="font-weight:700; color:var(--accent-primary);">${amt} ${i.unit}</span>
-                    </li>`;
-                }).join('')}
-            </ul>
-        </div>
-
-        <div class="recipe-section">
-            <h4>Preparazione</h4>
-            <ol style="padding-left:1.2rem; line-height:1.6;">
-                ${meal.instructions.map(s => `<li style="margin-bottom:0.8rem;">${s}</li>`).join('')}
-            </ol>
-        </div>
-    </div>`;
-
-    document.getElementById('meal-details').innerHTML = html;
-    document.getElementById('meal-modal').classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
+    `;
+    
+    modal.classList.remove('hidden');
 }
 
-function closeModal() {
-    document.getElementById('meal-modal').classList.add('hidden');
-    document.body.style.overflow = 'auto';
+function closeRecipeModal() {
+    document.getElementById('recipe-modal').classList.add('hidden');
 }
 
 // ============================================================
-// PROFILE
+// Profile Management
 // ============================================================
 
 function renderProfile() {
@@ -392,8 +253,63 @@ function renderProfile() {
     const u = appState.user;
     if (!u) return;
 
+    const labels = {
+        gender: u.gender === 'male' ? 'Uomo' : 'Donna',
+        activity: { '1.2': 'Sedentario', '1.375': 'Leggero', '1.55': 'Moderato', '1.725': 'Attivo' },
+        goal: { 'lose': 'Perdere peso', 'maintain': 'Mantenimento', 'gain': 'Aumento massa' },
+        diet: { 'standard': 'Standard', 'vegetarian': 'Vegetariana', 'vegan': 'Vegana' }
+    };
+
     container.innerHTML = `
-        <form id="edit-profile-form" onsubmit="saveProfile(event)">
+        <!-- Summary View -->
+        <div id="profile-summary" style="margin-bottom: 2rem;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+                <div class="glass-panel" style="padding: 1.25rem; text-align: center; border-radius: 16px;">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 0.5rem;">Peso</div>
+                    <div style="font-size: 1.5rem; font-weight: 800; color: var(--accent-primary);">${u.weight} <span style="font-size: 0.9rem; font-weight: 500;">kg</span></div>
+                </div>
+                <div class="glass-panel" style="padding: 1.25rem; text-align: center; border-radius: 16px;">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 0.5rem;">Altezza</div>
+                    <div style="font-size: 1.5rem; font-weight: 800; color: var(--accent-primary);">${u.height} <span style="font-size: 0.9rem; font-weight: 500;">cm</span></div>
+                </div>
+                <div class="glass-panel" style="padding: 1.25rem; text-align: center; border-radius: 16px;">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 0.5rem;">BMI</div>
+                    <div style="font-size: 1.5rem; font-weight: 800; color: var(--accent-primary);">${u.bmi || '--'}</div>
+                    <div style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 2px;">${u.bmiCategory || ''}</div>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 1rem;">
+                <div style="display: flex; justify-content: space-between; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid var(--glass-border);">
+                    <span style="color: var(--text-secondary);">Età / Sesso</span>
+                    <span style="font-weight: 700;">${u.age} anni, ${labels.gender}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid var(--glass-border);">
+                    <span style="color: var(--text-secondary);">Attività</span>
+                    <span style="font-weight: 700;">${labels.activity[u.activity_level] || u.activity_level}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid var(--glass-border);">
+                    <span style="color: var(--text-secondary);">Obiettivo</span>
+                    <span style="font-weight: 700;">${labels.goal[u.goal] || u.goal}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid var(--glass-border);">
+                    <span style="color: var(--text-secondary);">Tipo di Dieta</span>
+                    <span style="font-weight: 700; color: var(--accent-primary);">${labels.diet[u.diet_type] || u.diet_type || 'Standard'}</span>
+                </div>
+                <div style="padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid var(--glass-border);">
+                    <div style="color: var(--text-secondary); margin-bottom: 0.5rem; font-size: 0.9rem;">Esclusioni</div>
+                    <div style="font-weight: 600;">${u.excluded_foods?.length ? u.excluded_foods.join(', ') : 'Nessuna'}</div>
+                </div>
+            </div>
+
+            <button class="btn btn-outline" style="width: 100%; margin-top: 2rem; border: 1px dashed var(--glass-border); color: var(--text-secondary);" onclick="document.getElementById('profile-summary').classList.add('hidden'); document.getElementById('edit-profile-form').classList.remove('hidden');">
+                ✏️ Modifica Dati Profilo
+            </button>
+        </div>
+
+        <!-- Edit Form (Hidden by default) -->
+        <form id="edit-profile-form" class="hidden" onsubmit="saveProfile(event)">
+            <h3 style="margin-bottom: 1.5rem; font-size: 1.1rem;">Modifica Profilo</h3>
             <div class="form-grid">
                 <div class="form-group">
                     <label>Peso (kg)</label>
@@ -406,10 +322,10 @@ function renderProfile() {
                 <div class="form-group">
                     <label>Attività</label>
                     <select id="edit-activity" required>
-                        <option value="1.2" ${u.activity_level === 1.2 ? 'selected' : ''}>Sedentario</option>
-                        <option value="1.375" ${u.activity_level === 1.375 ? 'selected' : ''}>Leggero</option>
-                        <option value="1.55" ${u.activity_level === 1.55 ? 'selected' : ''}>Moderato</option>
-                        <option value="1.725" ${u.activity_level === 1.725 ? 'selected' : ''}>Attivo</option>
+                        <option value="1.2" ${u.activity_level == 1.2 ? 'selected' : ''}>Sedentario</option>
+                        <option value="1.375" ${u.activity_level == 1.375 ? 'selected' : ''}>Leggero</option>
+                        <option value="1.55" ${u.activity_level == 1.55 ? 'selected' : ''}>Moderato</option>
+                        <option value="1.725" ${u.activity_level == 1.725 ? 'selected' : ''}>Attivo</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -420,108 +336,97 @@ function renderProfile() {
                         <option value="gain" ${u.goal === 'gain' ? 'selected' : ''}>Aumento massa</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Tipo di Dieta</label>
+                    <select id="edit-diet">
+                        <option value="standard" ${u.diet_type === 'standard' ? 'selected' : ''}>Standard</option>
+                        <option value="vegetarian" ${u.diet_type === 'vegetarian' ? 'selected' : ''}>Vegetariana</option>
+                        <option value="vegan" ${u.diet_type === 'vegan' ? 'selected' : ''}>Vegana</option>
+                    </select>
+                </div>
             </div>
             <div class="form-group" style="margin-top: 1rem;">
                 <label>Cibi da evitare</label>
-                <textarea id="edit-dislikes" rows="1">${u.excluded_foods.join(', ')}</textarea>
+                <textarea id="edit-dislikes" rows="1">${u.excluded_foods?.join(', ') || ''}</textarea>
             </div>
             <div style="margin-top: 2rem; display: flex; gap: 1rem; align-items: center;">
                 <button type="submit" class="btn btn-primary" style="flex: 1;">💾 Salva Modifiche</button>
-                <span id="profile-save-feedback" style="color: #10b981; font-weight: bold; opacity: 0; transition: opacity 0.3s;">Salvato!</span>
+                <button type="button" class="btn btn-outline" style="flex: 1;" onclick="renderProfile()">Annulla</button>
             </div>
+            <div id="profile-save-feedback" style="color: #10b981; font-weight: bold; text-align: center; margin-top: 1rem; opacity: 0; transition: opacity 0.3s;">Salvato!</div>
         </form>
     `;
 }
 
-function saveProfile(e) {
+async function saveProfile(e) {
     e.preventDefault();
-    const weight = parseFloat(document.getElementById('edit-weight').value);
-    const height = parseInt(document.getElementById('edit-height').value);
-    const activity = parseFloat(document.getElementById('edit-activity').value);
-    const goal = document.getElementById('edit-goal').value;
-    const dislikes = document.getElementById('edit-dislikes').value.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
 
-    appState.user.weight = weight;
-    appState.user.height = height;
-    appState.user.activity_level = activity;
-    appState.user.goal = goal;
-    appState.user.excluded_foods = dislikes;
+    const data = {
+        weight: parseFloat(document.getElementById('edit-weight').value),
+        height: parseFloat(document.getElementById('edit-height').value),
+        activity_level: parseFloat(document.getElementById('edit-activity').value),
+        goal: document.getElementById('edit-goal').value,
+        diet_type: document.getElementById('edit-diet').value,
+        excluded_foods: document.getElementById('edit-dislikes').value.split(',').map(s => s.trim()).filter(Boolean)
+    };
 
-    // Recalculate target calories using calculateBMI logic
-    const heightM = height / 100;
-    const bmi = weight / (heightM * heightM);
-    let category = '';
-    if (bmi < 18.5) category = 'Sottopeso';
-    else if (bmi < 25) category = 'Normopeso';
-    else if (bmi < 30) category = 'Sovrappeso';
-    else category = 'Obesità';
-
-    let bmr = 0;
-    if (appState.user.gender === 'male') {
-        bmr = 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * appState.user.age);
-    } else {
-        bmr = 447.593 + (9.247 * weight) + (3.098 * height) - (4.330 * appState.user.age);
-    }
-
-    let tdee = bmr * activity;
-    let targetCals = tdee;
-    if (goal === 'lose') targetCals -= 500;
-    if (goal === 'gain') targetCals += 300;
+    // Calculate BMI
+    const hM = data.height / 100;
+    data.bmi = (data.weight / (hM * hM)).toFixed(1);
     
-    appState.user.bmi = bmi.toFixed(1);
-    appState.user.bmiCategory = category;
-    appState.user.targetCalories = Math.round(targetCals);
+    if (data.bmi < 18.5) data.bmiCategory = 'Sottopeso';
+    else if (data.bmi < 25) data.bmiCategory = 'Normopeso';
+    else if (data.bmi < 30) data.bmiCategory = 'Sovrappeso';
+    else data.bmiCategory = 'Obeso';
 
-    debouncedSave();
+    appState.user = { ...appState.user, ...data };
     
-    const feedback = document.getElementById('profile-save-feedback');
-    feedback.style.opacity = '1';
-    setTimeout(() => { feedback.style.opacity = '0'; }, 2000);
-}
+    // Calculate new target calories
+    const bmr = calculateBMR(appState.user);
+    appState.user.targetCalories = calculateTargetCalories(bmr, appState.user.goal);
 
-function regeneratePlan() {
-    if (confirm("Vuoi rigenerare i pasti per la settimana?")) {
-        appState.plan = generateMonthlyPlan(appState.user);
-        debouncedSave();
-        showView('dashboard');
-    }
-}
-
-function resetProfile() {
-    if (confirm("Attenzione: tutti i tuoi dati verranno cancellati. Procedere?")) {
-        appState = { user: null, plan: [] };
-        saveToCloud();
-        showView('onboarding');
+    localStorage.setItem('nutriplan_user', JSON.stringify(appState.user));
+    
+    try {
+        await syncToSupabase();
+        const feedback = document.getElementById('profile-save-feedback');
+        feedback.style.opacity = '1';
+        setTimeout(() => { 
+            feedback.style.opacity = '0';
+            renderProfile(); // Go back to summary
+        }, 1500);
+    } catch (err) {
+        console.error('Save failed:', err);
+    } finally {
+        btn.disabled = false;
     }
 }
 
 // ============================================================
-// CALENDAR
+// Calendar Logic
 // ============================================================
 
 function renderMonthlyCalendar() {
-    const container = document.getElementById('view-calendar');
+    const container = document.getElementById('monthly-calendar-container');
+    if (!container) return;
     
-    if (!appState.plan || appState.plan.length === 0) {
-        container.innerHTML = `
-            <div class="dashboard-header">
-                <h2 style="font-size:2rem;">🗓️ Calendario Settimanale</h2>
-            </div>
-            <div class="glass-panel text-center" style="padding: 3rem;">
-                <h3 style="color:var(--text-secondary);">Nessun piano alimentare generato.</h3>
-            </div>
-        `;
-        return;
-    }
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
     
-    const today = getTodayISO();
-    // Use the entire plan for the month calendar (30 days)
-    const visiblePlan = appState.plan.filter(p => p.date >= today).slice(0, 30);
+    // Get first day of month and total days
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    
+    // Day index (0=Sun, 1=Mon... 6=Sat) - convert to 1=Mon... 7=Sun
+    let startOffset = firstDay.getDay();
+    if (startOffset === 0) startOffset = 7;
+    startOffset--; // Now 0=Mon... 6=Sun
 
     let html = `
-        <div class="dashboard-header">
-            <h2 style="font-size:2rem;">🗓️ Calendario Mensile</h2>
-        </div>
         <div class="calendar-month-grid">
             <div class="calendar-day-header" data-short="Lun"><span>Lunedì</span></div>
             <div class="calendar-day-header" data-short="Mar"><span>Martedì</span></div>
@@ -532,59 +437,77 @@ function renderMonthlyCalendar() {
             <div class="calendar-day-header" data-short="Dom"><span>Domenica</span></div>
     `;
 
-    const firstDate = new Date(visiblePlan[0]?.date + 'T00:00:00');
-    let dayIdx = firstDate.getDay();
-    if (dayIdx === 0) dayIdx = 7;
+    // Empty cells padding
+    for (let i = 0; i < startOffset; i++) {
+        html += `<div class="calendar-day-cell empty" style="background: transparent; border: none;"></div>`;
+    }
 
-    for (let i = 1; i < dayIdx; i++) html += `<div class="calendar-day-cell empty"></div>`;
+    const todayStr = getTodayISO();
 
-    visiblePlan.forEach(day => {
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const dayPlan = appState.plan.find(p => p.date === dateStr);
+        const isToday = dateStr === todayStr;
+
         html += `
-            <div class="calendar-day-cell ${day.date === today ? 'is-today' : ''}">
-                <div class="calendar-date-number">${new Date(day.date + 'T00:00:00').getDate()}</div>
-                ${day.meals.breakfast ? `<div class="calendar-meal-chip breakfast" onclick="openMealDetails('${day.date}', 'breakfast')">☕ <span>${day.meals.breakfast.name}</span></div>` : ''}
-                ${day.meals.snack ? `<div class="calendar-meal-chip snack" onclick="openMealDetails('${day.date}', 'snack')">🍎 <span>${day.meals.snack.name}</span></div>` : ''}
-                ${day.meals.lunch ? `<div class="calendar-meal-chip lunch" onclick="openMealDetails('${day.date}', 'lunch')">🍝 <span>${day.meals.lunch.name}</span></div>` : ''}
-                ${day.meals.dinner ? `<div class="calendar-meal-chip dinner" onclick="openMealDetails('${day.date}', 'dinner')">🌙 <span>${day.meals.dinner.name}</span></div>` : ''}
+            <div class="calendar-day-cell ${isToday ? 'is-today' : ''}" style="position: relative;">
+                <div class="calendar-date-number" style="font-weight: ${isToday ? '800' : '600'}; color: ${isToday ? 'var(--accent-primary)' : 'var(--text-secondary)'};">${d}</div>
+                ${dayPlan ? `
+                    <div style="display: flex; flex-direction: column; gap: 2px;">
+                        ${Object.entries(dayPlan.meals).map(([type, m]) => {
+                            if (!m) return '';
+                            const icons = { breakfast: '☕', lunch: '🍝', snack: '🍎', dinner: '🌙' };
+                            return `<div class="calendar-meal-chip ${type} ${m.confirmed ? 'confirmed' : ''}" 
+                                         onclick="openMealDetails('${dateStr}', '${type}')" 
+                                         style="font-size: 0.65rem; padding: 2px 4px; border-radius: 4px; ${m.confirmed ? 'border: 1px solid var(--accent-primary);' : ''}">
+                                    ${icons[type]} <span class="chip-text">${m.name}</span>
+                                    ${m.confirmed ? ' <span style="font-size: 0.5rem;">✅</span>' : ''}
+                                </div>`;
+                        }).join('')}
+                    </div>
+                ` : ''}
             </div>
         `;
-    });
+    }
 
     html += `</div>`;
     container.innerHTML = html;
 }
 
 // ============================================================
-// SHOPPING LIST
+// Meal Actions
 // ============================================================
 
-function setupShoppingDaysSelector() {
-    const selectorContainer = document.getElementById('shopping-days-selector');
-    if (!selectorContainer) return;
-    if (!appState.plan || appState.plan.length === 0) {
-        selectorContainer.innerHTML = '';
-        return;
+function confirmMeal(date, type) {
+    const day = appState.plan.find(p => p.date === date);
+    if (day && day.meals[type]) {
+        day.meals[type].confirmed = !day.meals[type].confirmed;
+        localStorage.setItem('nutriplan_plan', JSON.stringify(appState.plan));
+        syncToSupabase();
+        
+        // Re-render based on current view
+        if (appState.view === 'dashboard') renderDashboard();
+        if (appState.view === 'calendar') renderMonthlyCalendar();
     }
-    
-    const today = getTodayISO();
-    const plan = appState.plan.filter(p => p.date >= today).slice(0, 7);
-    
-    let html = '';
-    plan.forEach((day, index) => {
-        const dateObj = new Date(day.date + 'T00:00:00');
-        const dayName = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'][dateObj.getDay()];
-        html += `
-            <label style="display:flex; align-items:center; gap:0.5rem; background:rgba(0,0,0,0.2); padding:0.5rem 1rem; border-radius:8px; cursor:pointer;">
-                <input type="checkbox" class="shopping-day-cb" value="${day.date}" ${index < 3 ? 'checked' : ''}>
-                <span>${dayName} ${dateObj.getDate()}</span>
-            </label>
-        `;
-    });
-    html += `
-        <button class="btn btn-primary" style="margin-top: 1rem; width: 100%;" onclick="renderShoppingList(true)">Genera Lista Selezionata</button>
-    `;
-    selectorContainer.innerHTML = html;
 }
+
+async function swapMeal(date, type) {
+    const day = appState.plan.find(p => p.date === date);
+    if (!day) return;
+
+    // Call global library (nutriplan.js) to get a new meal
+    const newMeal = window.generateSingleMeal(type, appState.user);
+    if (newMeal) {
+        day.meals[type] = newMeal;
+        localStorage.setItem('nutriplan_plan', JSON.stringify(appState.plan));
+        await syncToSupabase();
+        renderDashboard();
+    }
+}
+
+// ============================================================
+// Shopping List
+// ============================================================
 
 function renderShoppingList(forceGenerate = false) {
     const container = document.getElementById('shopping-list-content');
@@ -605,7 +528,7 @@ function renderShoppingList(forceGenerate = false) {
     }
 
     const today = getTodayISO();
-    let plan = appState.plan.filter(p => p.date >= today).slice(0, 7);
+    let plan = appState.plan.filter(p => p.date >= today).slice(0, 31);
     
     const checkboxes = document.querySelectorAll('.shopping-day-cb');
     if (checkboxes.length > 0) {
@@ -623,14 +546,14 @@ function renderShoppingList(forceGenerate = false) {
             if (!meal) return;
             const portion = meal.portion || 1;
             meal.ingredients.forEach(ing => {
-                const key = `${ing.name}-${ing.unit}`;
+                const key = `${ing.name.toLowerCase()}-${ing.unit}`;
                 if (!items[key]) items[key] = { name: ing.name, amount: 0, unit: ing.unit };
                 const amt = parseFloat(ing.amount);
                 if (!isNaN(amt)) items[key].amount += (amt * portion);
             });
             if (meal.smartAddition) {
                 const sa = meal.smartAddition;
-                const key = `${sa.name}-${sa.unit}`;
+                const key = `${sa.name.toLowerCase()}-${sa.unit}`;
                 if (!items[key]) items[key] = { name: sa.name, amount: 0, unit: sa.unit };
                 items[key].amount += sa.amount;
             }
@@ -639,15 +562,15 @@ function renderShoppingList(forceGenerate = false) {
 
     // ----- Categorize ingredients -----
     const CATEGORIES = {
-        '🥩 Carne & Pesce':   ['pollo','manzo','salmone','tonno','merluzzo','tacchino','maiale','prosciutto','bresaola','speck','sgombro','Zenzero','gamberi','cozze','vongole','pesce','carne','filetto','bistecca','cotoletta','hamburger','wurstel'],
-        '🥛 Latticini & Uova': ['latte','panna','yogurt','burro','mozzarella','parmigiano','pecorino','ricotta','uova','uovo','formaggio','grana','emmental','stracchino','mascarpone','gorgonzola'],
-        '🍞 Pane & Cereali':   ['pane','pasta','riso','farro','orzo','avena','farina','semola','crackers','grissini','pancarré','pangrattato','polenta','lasagne','gnocchi','couscous','quinoa'],
-        '🫒 Condimenti & Grassi': ['olio','aceto','sale','pepe','zucchero','miele','salsa','maionese','ketchup','senape','dado','brodo','pesto','tahini','soia'],
-        '🌿 Spezie & Aromi':   ['aglio','cipolla','prezzemolo','basilico','rosmarino','origano','timo','menta','zenzero','curcuma','paprika','cannella','peperoncino','curry','alloro','salvia','erba'],
-        '🥫 Conserve & Scatolame': ['pomodori','passata','pelati','legumi','fagioli','ceci','lenticchie','mais','tonno in scatola','sardine','acciughe','olive','capperi','funghi secchi'],
-        '🫙 Frutta Secca & Semi': ['noci','mandorle','nocciole','pistacchi','anacardi','pinoli','semi di','sesamo','lino','girasole','chia','cocco'],
-        '🍎 Frutta':           ['mele','banane','arance','limone','lime','fragole','mirtilli','lamponi','pesche','pere','uva','kiwi','melone','anguria','ananas','avocado','mango'],
-        '🥦 Verdure':          ['spinaci','zucchine','carote','broccoli','cavolfiore','cavolo','melanzane','peperoni','pomodori freschi','lattuga','insalata','sedano','finocchio','asparagi','piselli','carciofi','radicchio','bietole','patate','cipollotti'],
+        '🥩 Carne & Pesce':   ['pollo','manzo','salmone','tonno','merluzzo','tacchino','maiale','prosciutto','bresaola','speck','sgombro','gamberi','cozze','vongole','pesce','carne','filetto','bistecca','cotoletta','hamburger','wurstel','macinato'],
+        '🥛 Latticini & Uova': ['latte','panna','yogurt','burro','mozzarella','parmigiano','pecorino','ricotta','uova','uovo','formaggio','grana','emmental','stracchino','mascarpone','gorgonzola','feta','skyr'],
+        '🍞 Pane & Cereali':   ['pane','pasta','riso','farro','orzo','avena','farina','semola','crackers','grissini','pancarré','pangrattato','polenta','lasagne','gnocchi','couscous','quinoa','fette biscottate','cereali','muesli'],
+        '🫒 Condimenti & Grassi': ['olio','aceto','sale','pepe','zucchero','miele','salsa','maionese','ketchup','senape','dado','brodo','pesto','tahini','soia','crema'],
+        '🌿 Spezie & Aromi':   ['aglio','cipolla','prezzemolo','basilico','rosmarino','origano','timo','menta','zenzero','curcuma','paprika','cannella','peperoncino','curry','alloro','salvia','erba','noce moscata'],
+        '🥫 Conserve & Scatolame': ['pomodori','passata','pelati','legumi','fagioli','ceci','lenticchie','mais','tonno in scatola','sardine','acciughe','olive','capperi','funghi secchi','concentrato'],
+        '🫙 Frutta Secca & Semi': ['noci','mandorle','nocciole','pistacchi','anacardi','pinoli','semi di','sesamo','lino','girasole','chia','cocco','burro d\'arachidi'],
+        '🍎 Frutta':           ['mele','banane','arance','limone','lime','fragole','mirtilli','lamponi','pesche','pere','uva','kiwi','melone','anguria','ananas','avocado','mango','pompelmo'],
+        '🥦 Verdure':          ['spinaci','zucchine','carote','broccoli','cavolfiore','cavolo','melanzane','peperoni','pomodori freschi','lattuga','insalata','sedano','finocchio','asparagi','piselli','carciofi','radicchio','bietole','patate','cipollotti','rucola','valeriana','zucca','porri','fagiolini'],
     };
 
     function getCategory(name) {
@@ -666,87 +589,90 @@ function renderShoppingList(forceGenerate = false) {
         grouped[cat].push(item);
     });
 
-    // Sort categories by predefined order
     const catOrder = Object.keys(CATEGORIES).concat(['🛒 Altro']);
     const sortedCats = catOrder.filter(c => grouped[c]);
 
     let html = sortedCats.map(cat => `
         <div style="margin-bottom: 2rem;">
-            <h4 style="font-size: 1rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.75rem; letter-spacing: 0.05em;">${cat}</h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.6rem;">
+            <h4 style="font-size: 0.9rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 1rem; letter-spacing: 0.05em; border-left: 3px solid var(--accent-primary); padding-left: 0.75rem;">${cat.toUpperCase()}</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem;">
                 ${grouped[cat].map(item => `
-                    <label style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 10px; padding: 0.65rem 0.9rem; cursor: pointer; transition: background 0.2s;">
-                        <span style="display: flex; align-items: center; gap: 0.5rem; min-width: 0;">
-                            <input type="checkbox" class="ingredient-checkbox" style="flex-shrink: 0;">
-                            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem;" title="${item.name}">${item.name}</span>
+                    <label style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 12px; padding: 0.75rem 1rem; cursor: pointer; transition: all 0.2s;">
+                        <span style="display: flex; align-items: center; gap: 0.75rem; min-width: 0;">
+                            <input type="checkbox" class="ingredient-checkbox" style="width: 18px; height: 18px; cursor: pointer;">
+                            <span style="font-size: 0.95rem; font-weight: 500; line-height: 1.2; color: var(--text-primary);">${item.name}</span>
                         </span>
-                        <span style="font-weight: 700; color: var(--accent-primary); white-space: nowrap; font-size: 0.9rem; flex-shrink: 0;">${Math.round(item.amount)} ${item.unit}</span>
+                        <span style="font-weight: 700; color: var(--accent-primary); white-space: nowrap; font-size: 0.9rem; background: rgba(16, 185, 129, 0.1); padding: 2px 6px; border-radius: 4px;">${Math.round(item.amount)} ${item.unit}</span>
                     </label>
                 `).join('')}
             </div>
         </div>
     `).join('');
 
-    container.innerHTML = html;
+    container.innerHTML = html || '<p class="text-center text-muted">Nessun ingrediente trovato per i giorni selezionati.</p>';
 }
 
 // ============================================================
-// BOOTSTRAP
+// Sync Utilities
 // ============================================================
 
-window.app = {
-    showView,
-    closeModal
-};
-
-document.addEventListener('DOMContentLoaded', async () => {
-    initDomRefs();
-
-    _supabase.auth.onAuthStateChange(async (event, session) => {
-        try {
-            if (session) {
-                currentUser = session.user;
-                await fetchRecipesFromSupabase();
-                const hasProfile = await loadFromCloud();
-                if (hasProfile) showView('dashboard');
-                else showView('onboarding');
-            } else {
-                showView('auth');
-            }
-        } catch (err) {
-            console.error("Initialization error:", err);
-            showView('auth');
-        } finally {
-            hideLoader();
-        }
+async function syncToSupabase() {
+    if (!supabaseClient || !appState.user?.id) return;
+    
+    await supabaseClient.from('user_profiles').upsert({
+        user_id: appState.user.id,
+        profile_data: appState.user,
+        updated_at: new Date()
     });
 
-    // Safety timeout: hide loader after 10s even if something hangs
-    setTimeout(hideLoader, 10000);
+    await supabaseClient.from('user_plans').upsert({
+        user_id: appState.user.id,
+        plan_data: appState.plan,
+        updated_at: new Date()
+    });
+}
 
-    document.getElementById('btn-close-modal').onclick = closeModal;
-    document.getElementById('meal-modal').onclick = (e) => {
-        if (e.target === document.getElementById('meal-modal')) closeModal();
-    };
+async function syncFromSupabase() {
+    if (!supabaseClient || !appState.user?.id) return;
 
-    document.getElementById('login-form').onsubmit = handleLoginSubmit;
-    document.getElementById('onboarding-form').onsubmit = handleOnboardingSubmit;
-    
-    document.getElementById('mobile-menu-toggle').onclick = () => {
-        document.getElementById('main-nav').classList.toggle('mobile-active');
-    };
+    const { data: profile } = await supabaseClient
+        .from('user_profiles')
+        .select('profile_data')
+        .eq('user_id', appState.user.id)
+        .single();
 
-    document.getElementById('btn-logout').onclick = () => _supabase.auth.signOut();
-});
-
-// Global exposure
-window.swapMeal = (date, type) => {
-    const idx = appState.plan.findIndex(p => p.date === date);
-    const current = appState.plan[idx].meals[type];
-    const alt = findAlternativeMeal(current, appState.user, current.calories, [current.id]);
-    if (alt) {
-        appState.plan[idx].meals[type] = alt;
-        debouncedSave();
-        renderDashboard();
+    if (profile) {
+        appState.user = { ...appState.user, ...profile.profile_data };
+        localStorage.setItem('nutriplan_user', JSON.stringify(appState.user));
     }
-};
+
+    const { data: plan } = await supabaseClient
+        .from('user_plans')
+        .select('plan_data')
+        .eq('user_id', appState.user.id)
+        .single();
+
+    if (plan) {
+        appState.plan = plan.plan_data;
+        localStorage.setItem('nutriplan_plan', JSON.stringify(appState.plan));
+    }
+}
+
+async function handleLogout() {
+    await supabaseClient.auth.signOut();
+    localStorage.removeItem('nutriplan_user');
+    localStorage.removeItem('nutriplan_plan');
+    window.location.reload();
+}
+
+// ============================================================
+// Helpers
+// ============================================================
+
+function getTodayISO() {
+    return new Date().toISOString().split('T')[0];
+}
+
+// Global Export
+window.app = { initApp, showView, renderShoppingList, closeRecipeModal };
+document.addEventListener('DOMContentLoaded', initApp);
