@@ -16,33 +16,97 @@ function initDomRefs() {
 // AUTH
 // ============================================================
 
-function toggleAuthMode(mode) {
-    const loginForm = document.getElementById('login-form');
-    const registerForm = document.getElementById('register-form');
-    if (mode === 'register') {
-        loginForm.classList.add('hidden');
-        registerForm.classList.remove('hidden');
-    } else {
-        loginForm.classList.remove('hidden');
-        registerForm.classList.add('hidden');
+async function handleLoginSubmit(e) {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    const errorEl = document.getElementById('auth-error');
+    const submitBtn = document.getElementById('login-submit');
+
+    errorEl.style.display = 'none';
+    submitBtn.disabled = true;
+    submitBtn.innerText = 'Accesso in corso...';
+
+    try {
+        const { error } = await _supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+    } catch (err) {
+        errorEl.innerText = "Errore: " + err.message;
+        errorEl.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Accedi';
     }
 }
 
-async function handleAuthSubmit(e) {
+async function handleOnboardingSubmit(e) {
     e.preventDefault();
-    const isLogin = e.target.id === 'login-form';
-    const email = document.getElementById(isLogin ? 'login-email' : 'register-email').value;
-    const password = document.getElementById(isLogin ? 'login-password' : 'register-password').value;
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerText;
+    
+    // Account Data
+    const email = document.getElementById('reg-email').value;
+    const password = document.getElementById('reg-password').value;
+
+    // Profile Data
+    const profileData = {
+        gender: document.getElementById('gender').value,
+        age: parseInt(document.getElementById('age').value),
+        weight: parseFloat(document.getElementById('weight').value),
+        height: parseInt(document.getElementById('height').value),
+        activity: parseFloat(document.getElementById('activity').value),
+        goal: document.getElementById('goal').value,
+        diet_type: document.getElementById('diet-type').value,
+        eating_pattern: document.getElementById('eating-pattern').value,
+        dislikes: document.getElementById('dislikes').value
+    };
+
+    submitBtn.disabled = true;
+    submitBtn.innerText = 'Elaborazione...';
 
     try {
-        let { data, error } = isLogin 
-            ? await _supabase.auth.signInWithPassword({ email, password })
-            : await _supabase.auth.signUp({ email, password });
+        let userId = currentUser?.id;
 
-        if (error) throw error;
-        if (!isLogin && data.user) alert("Registrazione completata! Controlla l'email.");
+        // 1. Sign Up ONLY if not logged in
+        if (!userId) {
+            const { data: authData, error: authError } = await _supabase.auth.signUp({ 
+                email, 
+                password,
+                options: { data: { first_setup: true } }
+            });
+
+            if (authError) throw authError;
+            if (!authData.user) throw new Error("Errore durante la creazione dell'account.");
+            userId = authData.user.id;
+        }
+
+        // 2. Prepare Plan
+        const bmr = calculateBMR(profileData.weight, profileData.height, profileData.age, profileData.gender);
+        profileData.targetCalories = calculateTargetCalories(calculateTDEE(bmr, profileData.activity), profileData.goal);
+        
+        const plan = generateMonthlyPlan(profileData);
+
+        // 3. Save to user_data
+        const { error: dbError } = await _supabase.from('user_data').upsert({
+            id: userId,
+            nutrition_profile: profileData,
+            meal_plan: plan,
+            updated_at: new Date().toISOString()
+        });
+
+        if (dbError) {
+            console.error("Database error:", dbError);
+            // Even if DB save fails here, the auth state change will likely catch it or the user can retry.
+        }
+
+        appState.user = profileData;
+        appState.plan = plan;
+        
+        alert("Account creato con successo! Verificando la sessione...");
+        
     } catch (err) {
         alert("Errore: " + err.message);
+        submitBtn.disabled = false;
+        submitBtn.innerText = originalText;
     }
 }
 
@@ -109,6 +173,20 @@ function showView(viewName) {
 
     const target = document.getElementById(`view-${viewName}`);
     if (target) target.classList.remove('hidden');
+
+    // Hide account section if already logged in (e.g. during profile reset)
+    const accountSection = document.querySelector('#onboarding-form div[style*="border-top"]');
+    if (accountSection) {
+        if (currentUser) {
+            accountSection.classList.add('hidden');
+            document.getElementById('reg-email').required = false;
+            document.getElementById('reg-password').required = false;
+        } else {
+            accountSection.classList.remove('hidden');
+            document.getElementById('reg-email').required = true;
+            document.getElementById('reg-password').required = true;
+        }
+    }
 
     if (viewName === 'dashboard') renderDashboard();
     if (viewName === 'calendar') renderMonthlyCalendar();
@@ -400,7 +478,6 @@ function renderShoppingList() {
 
 window.app = {
     showView,
-    toggleAuthMode,
     closeModal
 };
 
@@ -419,8 +496,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    document.getElementById('login-form').onsubmit = handleAuthSubmit;
-    document.getElementById('register-form').onsubmit = handleAuthSubmit;
+    document.getElementById('login-form').onsubmit = handleLoginSubmit;
     document.getElementById('onboarding-form').onsubmit = handleOnboardingSubmit;
     
     document.getElementById('mobile-menu-toggle').onclick = () => {
@@ -429,29 +505,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('btn-logout').onclick = () => _supabase.auth.signOut();
 });
-
-function handleOnboardingSubmit(e) {
-    e.preventDefault();
-    const data = {
-        gender: document.getElementById('gender').value,
-        age: parseInt(document.getElementById('age').value),
-        weight: parseFloat(document.getElementById('weight').value),
-        height: parseInt(document.getElementById('height').value),
-        activity: parseFloat(document.getElementById('activity').value),
-        goal: document.getElementById('goal').value,
-        diet_type: document.getElementById('diet-type').value,
-        eating_pattern: document.getElementById('eating-pattern').value,
-        dislikes: document.getElementById('dislikes').value
-    };
-
-    const bmr = calculateBMR(data.weight, data.height, data.age, data.gender);
-    data.targetCalories = calculateTargetCalories(calculateTDEE(bmr, data.activity), data.goal);
-    
-    appState.user = data;
-    appState.plan = generateMonthlyPlan(data);
-    debouncedSave();
-    showView('dashboard');
-}
 
 // Global exposure
 window.swapMeal = (date, type) => {
